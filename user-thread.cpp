@@ -11,12 +11,12 @@ constexpr size_t stack_size = 0xffff;
 context main_thread_env;
 ThreadData* current_thread = nullptr;
 
-void thread_entry(ThreadData& thread_data) {
+void thread_entry(ThreadData& thread_data, void* arg) {
 	printf("start thread in new stack frame\n");
 
 	thread_data.state = ThreadState::running;
 
-	thread_data.func();
+	thread_data.func(arg);
 
 	printf("end thread\n");
 	thread_data.state = ThreadState::ended;
@@ -28,14 +28,14 @@ void thread_entry(ThreadData& thread_data) {
 
 }
 
-Thread start_thread(void (*func)()) {
+Thread start_thread(void (*func)(void* arg), void* arg) {
 	Thread th;
 	th.thread_data = std::make_unique<ThreadData>();
 
 	th.thread_data->func = func;
 	th.thread_data->stack_frame = std::make_unique<char[]>(stack_size);
 
-	th.start();
+	th.start(arg);
 	return th;
 
 }
@@ -55,7 +55,7 @@ void yield_thread() {
 	mylongjmp(main_thread_env);
 }
 
-void Thread::start() {
+void Thread::start(void* arg) {
 
 	if (mysetjmp(main_thread_env)) {
 		printf("jumped to start thread function\n");
@@ -72,7 +72,7 @@ void Thread::start() {
 
 	char* stack_frame = thread_data->stack_frame.get();
 	__asm__("movq %0, %%rsp" : : "r" (stack_frame + stack_size) : "%rsp");
-	thread_entry (*thread_data);
+	thread_entry(*thread_data, arg);
 
 }
 

@@ -4,7 +4,7 @@
 
 #include "user-thread.hpp"
 
-void childfun() {
+void childfun(void* arg) {
 	printf("childfun!\n");
 	yield_thread();
 
@@ -24,9 +24,9 @@ int main(int argc, char **argv) {
 	
 	printf("call 3 childfun\n");
 	std::list<Thread> threads;
-	threads.push_back(start_thread(childfun));
-//	threads.push_back(start_thread(childfun));
-//	threads.push_back(start_thread(childfun));
+	threads.push_back(start_thread(childfun, 0));
+	threads.push_back(start_thread(childfun, 0));
+	threads.push_back(start_thread(childfun, 0));
 
 	while (!threads.empty()) {
 		for (auto it = threads.begin(), end = threads.end(); it != end;) {

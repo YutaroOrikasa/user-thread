@@ -15,7 +15,7 @@ struct ThreadData {
 	context env;
 	ThreadState state;
 	std::unique_ptr<char[]> stack_frame;
-	void (*func)();
+	void (*func)(void* arg);
 	ThreadData() = default;
 
 	// non copyable
@@ -25,10 +25,10 @@ struct ThreadData {
 };
 
 class Thread {
-	friend Thread start_thread(void (*func)());
+	friend Thread start_thread(void (*func)(void* arg), void* arg);
 	std::unique_ptr<ThreadData> thread_data;
 
-	void start();
+	void start(void* arg);
 
 public:
 
@@ -38,7 +38,7 @@ public:
 };
 
 void yield_thread();
-Thread start_thread(void (*func)());
+Thread start_thread(void (*func)(void* arg), void* arg);
 
 
 
