@@ -25,8 +25,8 @@ int main(int argc, char **argv) {
 	printf("call 3 childfun\n");
 	std::list<Thread> threads;
 	threads.push_back(start_thread(childfun));
-	threads.push_back(start_thread(childfun));
-	threads.push_back(start_thread(childfun));
+//	threads.push_back(start_thread(childfun));
+//	threads.push_back(start_thread(childfun));
 
 	while (!threads.empty()) {
 		for (auto it = threads.begin(), end = threads.end(); it != end;) {
