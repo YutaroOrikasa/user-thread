@@ -1,0 +1,1 @@
+g++ -std=c++14 mysetjmp.s user-thread.cpp main.cpp -o main -O3

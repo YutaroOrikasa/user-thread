@@ -4,14 +4,15 @@
 #define USER_THREAD_HPP_
 
 #include <memory>
-#include <setjmp.h>
+
+#include "mysetjmp.h"
 
 enum class ThreadState {
 	running, ended
 };
 
 struct ThreadData {
-	jmp_buf env;
+	context env;
 	ThreadState state;
 	std::unique_ptr<char[]> stack_frame;
 	void (*func)();

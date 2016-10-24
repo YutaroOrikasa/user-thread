@@ -1,14 +1,14 @@
 #include <list>
 #include <memory>
 #include <stdexcept>
-#include <setjmp.h>
 
 #include "user-thread.hpp"
+#include "mysetjmp.h"
 
 namespace {
 constexpr size_t stack_size = 0xffff;
 
-jmp_buf main_thread_env;
+context main_thread_env;
 ThreadData* current_thread = nullptr;
 
 void thread_entry(ThreadData& thread_data) {
@@ -22,7 +22,7 @@ void thread_entry(ThreadData& thread_data) {
 	thread_data.state = ThreadState::ended;
 	printf("end: %p\n", &thread_data);
 
-	longjmp(main_thread_env, 1);
+	mylongjmp(main_thread_env);
 	// no return
 }
 
@@ -48,16 +48,16 @@ void yield_thread() {
 
 	printf("y: %p\n", current_thread);
 
-	if (setjmp(current_thread->env)) {
+	if (mysetjmp(current_thread->env)) {
 		printf("jump back!\n");
 		return;
 	}
-	longjmp(main_thread_env, 1);
+	mylongjmp(main_thread_env);
 }
 
 void Thread::start() {
 
-	if (setjmp (main_thread_env)) {
+	if (mysetjmp(main_thread_env)) {
 		printf("jumped to start thread function\n");
 		current_thread = nullptr;
 		return;
@@ -77,7 +77,7 @@ void Thread::start() {
 }
 
 void Thread::continue_() {
-	if (setjmp (main_thread_env)) {
+	if (mysetjmp(main_thread_env)) {
 		printf("jumped to start thread function\n");
 		current_thread = nullptr;
 		return;
@@ -86,7 +86,7 @@ void Thread::continue_() {
 	thread_data->state = ThreadState::running;
 	current_thread = &*thread_data;
 
-	longjmp(thread_data->env, 1);
+	mylongjmp(thread_data->env);
 }
 
 bool Thread::running() {
