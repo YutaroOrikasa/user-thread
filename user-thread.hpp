@@ -8,15 +8,21 @@
 #include "mysetjmp.h"
 
 enum class ThreadState {
-	running, ended
+	running, ended, before_launch, stop
 };
 
 struct ThreadData {
-	context env;
-	ThreadState state;
-	std::unique_ptr<char[]> stack_frame;
 	void (*func)(void* arg);
-	ThreadData() = default;
+	void* arg;
+	const std::unique_ptr<char[]> stack_frame;
+	context env;
+	ThreadState state = ThreadState::before_launch;
+
+public:
+	ThreadData(void (*func)(void* arg), void* arg,
+			std::unique_ptr<char[]> stack_frame) :
+			func(func), arg(arg), stack_frame(std::move(stack_frame)) {
+	}
 
 	// non copyable
 	ThreadData(const ThreadData&) = delete;
@@ -25,12 +31,15 @@ struct ThreadData {
 };
 
 class Thread {
-	friend Thread start_thread(void (*func)(void* arg), void* arg);
-	std::unique_ptr<ThreadData> thread_data;
+	ThreadData* thread_data;
 
 	void start(void* arg);
 
 public:
+
+	explicit Thread(ThreadData& td) :
+			thread_data(&td) {
+	}
 
 	bool running();
 	void continue_();
