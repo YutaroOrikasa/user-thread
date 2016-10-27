@@ -5,46 +5,17 @@ namespace orks {
 namespace userthread {
 namespace detail {
 
-thread_local context worker_thread_context;
-thread_local ThreadData* current_thread;
-
-void entry_thread(ThreadData& thread_data) {
-	printf("start thread in new stack frame\n");
-	std::cout << std::endl;
-	thread_data.state = ThreadState::running;
-
-	thread_data.func(thread_data.arg);
-
-	printf("end thread\n");
-	thread_data.state = ThreadState::ended;
-	printf("end: %p\n", &thread_data);
-
-	// jump to last worker context
-	mylongjmp(worker_thread_context);
-	// no return
+// private
+namespace {
+thread_local Worker* worker_of_this_native_thread;
 }
 
-void execute_thread(ThreadData& thread_data) {
+void register_worker_of_this_native_thread(Worker& worker) {
+	worker_of_this_native_thread = &worker;
+}
 
-	printf("start executing user thread!\n");
-	if (mysetjmp(worker_thread_context)) {
-		printf("jumped to worker\n");
-		current_thread = nullptr;
-		return;
-	}
-
-	current_thread = &thread_data;
-
-	if (thread_data.state == ThreadState::before_launch) {
-		char* stack_frame = thread_data.stack_frame.get();
-		printf("launch user thread!\n");
-		__asm__("movq %0, %%rsp" : : "r" (stack_frame + stack_size) : "%rsp");
-		entry_thread(thread_data);
-	} else {
-		thread_data.state = ThreadState::running;
-		mylongjmp(thread_data.env);
-	}
-
+Worker& get_worker_of_this_native_thread() {
+	return *worker_of_this_native_thread;
 }
 
 } // detail

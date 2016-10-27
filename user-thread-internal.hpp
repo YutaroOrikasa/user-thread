@@ -40,6 +40,10 @@ public:
 };
 void execute_thread(ThreadData& thread_data);
 
+class Worker;
+void register_worker_of_this_native_thread(Worker& worker);
+Worker& get_worker_of_this_native_thread();
+
 // internal helper
 namespace util {
 
@@ -161,7 +165,17 @@ private:
  * でないとterminateする。
  */
 class Worker {
+//	struct WorkerData {
+//
+//		WorkerData(const WorkerData&) = delete;
+//		WorkerData(WorkerData&&) = delete;
+//	};
+//	WorkerData worker_data;
+	context worker_thread_context;
+	ThreadData* current_thread = nullptr;
+
 	std::thread worker_thread;
+
 public:
 	explicit Worker(WorkQueue& work_queue) :
 			worker_thread([&]() {do_works(work_queue);}) {
@@ -175,7 +189,9 @@ public:
 	}
 
 private:
-	static void do_works(WorkQueue& work_queue) {
+	void do_works(WorkQueue& work_queue) {
+
+		register_worker_of_this_native_thread(*this);
 
 		printf("woker is wake up!\n");
 
@@ -190,6 +206,45 @@ private:
 			printf("stack frame is at %p\n", thread_data->stack_frame.get());
 
 			execute_thread(*thread_data);
+		}
+
+	}
+
+	void entry_thread(ThreadData& thread_data) {
+		printf("start thread in new stack frame\n");
+		std::cout << std::endl;
+		thread_data.state = ThreadState::running;
+
+		thread_data.func(thread_data.arg);
+
+		printf("end thread\n");
+		thread_data.state = ThreadState::ended;
+		printf("end: %p\n", &thread_data);
+
+		// jump to last worker context
+		mylongjmp(worker_thread_context);
+		// no return
+	}
+
+	void execute_thread(ThreadData& thread_data) {
+
+		printf("start executing user thread!\n");
+		if (mysetjmp(worker_thread_context)) {
+			printf("jumped to worker\n");
+			current_thread = nullptr;
+			return;
+		}
+
+		current_thread = &thread_data;
+
+		if (thread_data.state == ThreadState::before_launch) {
+			char* stack_frame = thread_data.stack_frame.get();
+			printf("launch user thread!\n");
+			__asm__("movq %0, %%rsp" : : "r" (stack_frame + stack_size) : "%rsp");
+			entry_thread(thread_data);
+		} else {
+			thread_data.state = ThreadState::running;
+			mylongjmp(thread_data.env);
 		}
 
 	}
