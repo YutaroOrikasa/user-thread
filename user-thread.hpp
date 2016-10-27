@@ -21,8 +21,6 @@ using namespace detail;
 class Thread {
 	ThreadData* thread_data;
 
-	void start(void* arg);
-
 public:
 
 	explicit Thread(ThreadData& td) :
@@ -30,7 +28,6 @@ public:
 	}
 
 	bool running();
-	void continue_();
 
 };
 
