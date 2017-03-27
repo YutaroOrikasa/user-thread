@@ -165,12 +165,9 @@ private:
  * でないとterminateする。
  */
 class Worker {
-//	struct WorkerData {
-//
-//		WorkerData(const WorkerData&) = delete;
-//		WorkerData(WorkerData&&) = delete;
-//	};
-//	WorkerData worker_data;
+
+	WorkQueue& work_queue;
+
 	context worker_thread_context;
 	ThreadData* current_thread = nullptr;
 
@@ -178,7 +175,8 @@ class Worker {
 
 public:
 	explicit Worker(WorkQueue& work_queue) :
-			worker_thread([&]() {do_works(work_queue);}) {
+			work_queue(work_queue),
+			worker_thread([&]() {do_works();}) {
 	}
 
 	Worker(const Worker&) = delete;
@@ -188,8 +186,27 @@ public:
 		worker_thread.join();
 	}
 
+	void schedule_thread() {
+
+		if (current_thread == nullptr) {
+			throw std::logic_error("bad operation: yield worker thread");
+		}
+
+		printf("y: %p\n", current_thread);
+
+		current_thread->state = ThreadState::stop;
+
+		work_queue.push(*current_thread);
+
+		if (mysetjmp(current_thread->env)) {
+			printf("jump back!\n");
+			return;
+		}
+		mylongjmp(worker_thread_context);
+	}
+
 private:
-	void do_works(WorkQueue& work_queue) {
+	void do_works() {
 
 		register_worker_of_this_native_thread(*this);
 

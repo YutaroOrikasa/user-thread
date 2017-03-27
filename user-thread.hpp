@@ -76,7 +76,16 @@ public:
 		return Thread(*thread_data);
 
 	}
+
+	/**
+	 * user threadがこの関数を呼び出すと、呼び出したuser threadは一時停止し、他のuser threadが動く。
+	 * この関数を呼び出したuser threadはスケジューラーによって自動的に再開される。
+	 */
+	void scheduling_yield() {
+		get_worker_of_this_native_thread().schedule_thread();
+	}
 };
+
 
 void yield_thread();
 Thread start_thread(void (*func)(void* arg), void* arg);
@@ -91,21 +100,6 @@ namespace {
 
 
 }
-//
-//void yield_thread() {
-//	if (current_thread == nullptr) {
-//		throw std::logic_error("bad operation: yield worker thread");
-//	}
-//
-//	printf("y: %p\n", current_thread);
-//
-//	current_thread->state = ThreadState::stop;
-//
-//	if (mysetjmp(current_thread->env)) {
-//		printf("jump back!\n");
-//		return;
-//	}
-//	mylongjmp(worker_thread_context);
-//}
+
 
 #endif /* USER_THREAD_HPP_ */
