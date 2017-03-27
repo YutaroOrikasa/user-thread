@@ -1,7 +1,7 @@
         .text
         .globl mysetjmp
 mysetjmp:
-	movq %rsi, 0(%rdi)
+	movq %rbx, 0(%rdi)
 	movq %rbp, 16(%rdi)
 	movq %r12, 24(%rdi)
 	movq %r13, 32(%rdi)
@@ -12,14 +12,14 @@ mysetjmp:
 	movq %rsp, 8(%rdi)
 	movq %rcx, 56(%rdi)
 	pushq %rcx
-        
+
         mov $0, %rax
 	ret
 
         .text
         .globl mylongjmp
 mylongjmp:
-	movq 0(%rdi), %rsi
+	movq 0(%rdi), %rbx
 	movq 8(%rdi), %rsp
 	movq 16(%rdi), %rbp
 	movq 24(%rdi), %r12
