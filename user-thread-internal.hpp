@@ -8,6 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <memory>
+#include <iostream>
 
 #include "mysetjmp.h"
 
@@ -96,6 +97,8 @@ class WorkQueue {
 	// set to true when first push is occured
 	bool is_queue_started = false;
 
+	bool closed = false;
+
 public:
 
 	explicit WorkQueue(int number_of_workers) :
@@ -104,6 +107,9 @@ public:
 
 	// you can not push nullptr
 	void push(ThreadData& td) {
+		if (closed) {
+			throw std::logic_error("pushing closed work queue");
+		}
 		push_impl(&td, false);
 	}
 
@@ -129,6 +135,7 @@ public:
 		if (td != nullptr) {
 			queue.pop();
 		}
+		printf("WQ::pop %p\n", td);
 		return td;
 	}
 
@@ -150,6 +157,7 @@ private:
 	void close() {
 		printf("WQ::close\n");
 		push_impl(nullptr, true);
+		closed = true;
 	}
 
 	/*
@@ -161,6 +169,7 @@ private:
 
 
 /*
+ * main thread でworker を 1つ 作成すると、新しい native thread が1つ作成される。
  * このクラスの使用者は必ずwait()を呼ぶこと。
  * でないとterminateする。
  */
@@ -189,14 +198,13 @@ public:
 	void schedule_thread() {
 
 		if (current_thread == nullptr) {
+			printf("err at this: %p\n", this);
 			throw std::logic_error("bad operation: yield worker thread");
 		}
 
-		printf("y: %p\n", current_thread);
+		printf("yield from: %p\n", current_thread);
 
 		current_thread->state = ThreadState::stop;
-
-		work_queue.push(*current_thread);
 
 		if (mysetjmp(current_thread->env)) {
 			printf("jump back!\n");
@@ -210,11 +218,11 @@ private:
 
 		register_worker_of_this_native_thread(*this);
 
-		printf("woker is wake up!\n");
+		printf("worker is wake up!\n");
 
 		for (;;) {
 			ThreadData* thread_data = work_queue.pop();
-			printf("pop %p\n", thread_data);
+			printf("this %p pop %p\n", this, thread_data);
 			if (!thread_data) {
 				printf("worker will quit\n");
 				return;
@@ -223,11 +231,12 @@ private:
 			printf("stack frame is at %p\n", thread_data->stack_frame.get());
 
 			execute_thread(*thread_data);
+
 		}
 
 	}
 
-	void entry_thread(ThreadData& thread_data) {
+	static void entry_thread(ThreadData& thread_data) {
 		printf("start thread in new stack frame\n");
 		std::cout << std::endl;
 		thread_data.state = ThreadState::running;
@@ -238,8 +247,12 @@ private:
 		thread_data.state = ThreadState::ended;
 		printf("end: %p\n", &thread_data);
 
+		// worker can switch before and after func() called.
+		auto& worker = get_worker_of_this_native_thread();
+
+		worker.current_thread = nullptr;
 		// jump to last worker context
-		mylongjmp(worker_thread_context);
+		mylongjmp(worker.worker_thread_context);
 		// no return
 	}
 
@@ -248,7 +261,11 @@ private:
 		printf("start executing user thread!\n");
 		if (mysetjmp(worker_thread_context)) {
 			printf("jumped to worker\n");
-			current_thread = nullptr;
+			std::cout << "current_thread after jump: " << current_thread << std::endl;
+			if (current_thread) {
+				// come here when yield() called
+				work_queue.push(*current_thread);
+			}
 			return;
 		}
 
@@ -257,8 +274,12 @@ private:
 		if (thread_data.state == ThreadState::before_launch) {
 			char* stack_frame = thread_data.stack_frame.get();
 			printf("launch user thread!\n");
+
 			__asm__("movq %0, %%rsp" : : "r" (stack_frame + stack_size) : "%rsp");
+			// DO NOT touch local variable because the address of stack frame has been changed.
+			// you can touch function argument because they are in register.
 			entry_thread(thread_data);
+
 		} else {
 			thread_data.state = ThreadState::running;
 			mylongjmp(thread_data.env);
