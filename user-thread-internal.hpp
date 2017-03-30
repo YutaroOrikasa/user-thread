@@ -123,7 +123,7 @@ public:
 		// ignore when queue is not started
 		if (is_queue_started) {
 			// if all workers are hungry
-			if (number_of_hungry_workers == number_of_workers) {
+			if (queue.empty() && number_of_hungry_workers == number_of_workers) {
 				close();
 			}
 		}
