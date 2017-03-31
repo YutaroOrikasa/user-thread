@@ -5,9 +5,9 @@
 #include "user-thread.hpp"
 
 namespace mymain {
-    using namespace orks::userthread;
+using namespace orks::userthread;
 
-    WorkerManager wm {4};
+WorkerManager wm {4};
 }
 
 template <typename Fn>
@@ -18,7 +18,7 @@ void exec_thread(void* func_obj) {
 
 // return: std::future<auto>
 template <typename Fn>
-auto create_thread(Fn fn){
+auto create_thread(Fn fn) {
     std::promise<decltype(fn())> promise;
     auto future = promise.get_future();
 
@@ -33,12 +33,14 @@ auto create_thread(Fn fn){
 
 long fibo(long n) {
     std::cout << "fibo(" << n << ")" << std::endl;
-    if (n==0 || n==1) {
+    if (n == 0 || n == 1) {
         return  n;
     }
-    auto future = create_thread([n](){return fibo(n-1);});
-    auto n2 = fibo(n-2);
-    for(; future.wait_for(std::chrono::seconds(0)) != std::future_status::ready;) {
+    auto future = create_thread([n]() {
+        return fibo(n - 1);
+    });
+    auto n2 = fibo(n - 2);
+    for (; future.wait_for(std::chrono::seconds(0)) != std::future_status::ready;) {
         std::cout << "wait fibo(" << n << "-1)" << std::endl;
         mymain::wm.scheduling_yield();
     }
@@ -46,7 +48,7 @@ long fibo(long n) {
     return n2 + future.get();
 }
 
-void fibo_main(void*){
+void fibo_main(void*) {
     std::cout << "fibo(20) must be 6765. answer: " << fibo(20) << std::endl;
 }
 
