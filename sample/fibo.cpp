@@ -7,7 +7,7 @@
 namespace mymain {
     using namespace orks::userthread;
 
-    WorkerManager wm {1};
+    WorkerManager wm {4};
 }
 
 template <typename Fn>
