@@ -8,9 +8,7 @@
 #include <list>
 #include <queue>
 
-
-#include "mysetjmp.h"
-#include "user-thread-internal.hpp"
+#include "../src/user-thread-internal.hpp"
 
 
 
