@@ -242,26 +242,6 @@ private:
 
     }
 
-    static void entry_thread(ThreadData& thread_data) {
-        debug::printf("start thread in new stack frame\n");
-        std::cout << std::endl;
-        thread_data.state = ThreadState::running;
-
-        thread_data.func(thread_data.arg);
-
-        debug::printf("end thread\n");
-        thread_data.state = ThreadState::ended;
-        debug::printf("end: %p\n", &thread_data);
-
-        // worker can switch before and after func() called.
-        auto& worker = get_worker_of_this_native_thread();
-
-        worker.current_thread = nullptr;
-        // jump to last worker context
-        mylongjmp(worker.worker_thread_context);
-        // no return
-    }
-
     void execute_thread(ThreadData& thread_data) {
 
         debug::printf("start executing user thread!\n");
@@ -291,6 +271,26 @@ private:
             mylongjmp(thread_data.env);
         }
 
+    }
+
+    static void entry_thread(ThreadData& thread_data) {
+        debug::printf("start thread in new stack frame\n");
+        std::cout << std::endl;
+        thread_data.state = ThreadState::running;
+
+        thread_data.func(thread_data.arg);
+
+        debug::printf("end thread\n");
+        thread_data.state = ThreadState::ended;
+        debug::printf("end: %p\n", &thread_data);
+
+        // worker can switch before and after func() called.
+        auto& worker = get_worker_of_this_native_thread();
+
+        worker.current_thread = nullptr;
+        // jump to last worker context
+        mylongjmp(worker.worker_thread_context);
+        // no return
     }
 
 };
