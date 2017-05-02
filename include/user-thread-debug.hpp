@@ -36,8 +36,10 @@ public:
     /*
      * for (*this) << std::endl
      */
-    auto& operator<<(std::ostream & (*)(std::ostream&)) {
-
+    auto& operator<<(std::ostream & (*pf)(std::ostream&)) {
+#ifdef ORKS_USERTHREAD_DEBUG_OUTBUT
+        std::cerr << pf;
+#endif
         return *this;
     }
 };
