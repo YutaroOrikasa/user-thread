@@ -11,7 +11,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 # set(CMAKE_CXX_FLAGS_MINSIZEREL "-Os -DNDEBUG -march=native")
 
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/config.h.in
-                ${CMAKE_CURRENT_BINARY_DIR}/include/config.h)
+                ${CMAKE_CURRENT_SOURCE_DIR}/include/config.h)
 
 set(CMAKE_CXX_STANDARD 14)
 include_directories("include")
