@@ -26,9 +26,19 @@ public:
 
 #ifdef ORKS_USERTHREAD_DEBUG_OUTBUT
         std::cerr << "thread at " << std::this_thread::get_id() << ": " << std::forward<Rhs>(rhs);
-#endif
-
         return std::cerr;
+#else
+        // (*this) << "brabrabra"  will do nothing.
+        return *this;
+#endif
+    }
+
+    /*
+     * for (*this) << std::endl
+     */
+    auto& operator<<(std::ostream & (*)(std::ostream&)) {
+
+        return *this;
     }
 };
 
