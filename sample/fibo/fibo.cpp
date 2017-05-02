@@ -32,7 +32,7 @@ auto create_thread(Fn fn) {
 }
 
 long fibo(long n) {
-    std::cout << "fibo(" << n << ")" << std::endl;
+    // std::cout << "fibo(" << n << ")" << std::endl;
     if (n == 0 || n == 1) {
         return  n;
     }
@@ -41,7 +41,7 @@ long fibo(long n) {
     });
     auto n2 = fibo(n - 2);
     for (; future.wait_for(std::chrono::seconds(0)) != std::future_status::ready;) {
-        std::cout << "wait fibo(" << n << "-1)" << std::endl;
+        // std::cout << "wait fibo(" << n << "-1)" << std::endl;
         mymain::wm.scheduling_yield();
     }
 
