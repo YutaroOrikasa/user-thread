@@ -16,6 +16,11 @@ namespace debug {
 
 class Out {
 public:
+
+    /*
+     * if ORKS_USERTHREAD_DEBUG_OUTBUT is define, output rhs to std::cerr
+     * else, do nothing
+     */
     template <typename Rhs>
     auto& operator<<(Rhs&& rhs) {
 
