@@ -1,1 +1,1 @@
-// #cmakedefine 
+#cmakedefine ORKS_USERTHREAD_DEBUG_OUTBUT
