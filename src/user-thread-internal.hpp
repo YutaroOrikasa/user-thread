@@ -275,7 +275,7 @@ private:
 
     static void entry_thread(ThreadData& thread_data) {
         debug::printf("start thread in new stack frame\n");
-        std::cout << std::endl;
+        debug::out << std::endl;
         thread_data.state = ThreadState::running;
 
         thread_data.func(thread_data.arg);
