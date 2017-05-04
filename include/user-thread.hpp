@@ -4,7 +4,6 @@
 #define USER_THREAD_HPP_
 
 #include <cstdio>
-#include <malloc.h>
 #include <list>
 #include <queue>
 
