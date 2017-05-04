@@ -1,5 +1,6 @@
 #include <iostream>
 #include <future>
+#include <exception>
 #include <utility>
 
 #include "user-thread.hpp"
@@ -54,6 +55,16 @@ void fibo_main(void*) {
 
 int main() {
 
-    mymain::wm.start_main_thread(fibo_main, nullptr);
+    try {
+        mymain::wm.start_main_thread(fibo_main, nullptr);
+    } catch (std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return 1;
+    } catch (...) {
+        std::cerr << "caught unknown exception" << std::endl;
+        return 1;
+    }
+
+
 
 }
