@@ -1,4 +1,3 @@
-#include <iostream>
 #include "user-thread.hpp"
 
 namespace orks {
