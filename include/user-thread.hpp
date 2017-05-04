@@ -36,6 +36,15 @@ class WorkerManager {
     std::mutex mutex_for_threads;
     std::list<ThreadData> threads;
 
+    static unsigned int number_of_cpu_cores() {
+        const auto num = std::thread::hardware_concurrency();
+        if (num == 0) {
+            return 1;
+        }
+
+        return num;
+    }
+
 public:
     explicit WorkerManager(unsigned int number_of_worker) :
         work_queue(number_of_worker) {
@@ -43,6 +52,13 @@ public:
         for (unsigned int i = 0; i < number_of_worker; ++i) {
             workers.emplace_back(work_queue);
         }
+    }
+
+    /*
+     * construct WorkerManager with the number of the cpu cores of your computer
+     */
+    WorkerManager() :
+        WorkerManager(number_of_cpu_cores()) {
     }
 
     /**
