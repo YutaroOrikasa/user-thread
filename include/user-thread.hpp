@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <list>
 #include <queue>
+#include <future>
 
 #include "../src/user-thread-internal.hpp"
 
@@ -120,6 +121,31 @@ void init_worker_manager();
 void start_main_thread(void (*func)(void* arg), void* arg);
 
 void yield();
+
+namespace detail {
+
+template<typename Fn>
+void exec_thread(void* func_obj) {
+    (*static_cast<Fn*>(func_obj))();
+    delete static_cast<Fn*>(func_obj);
+}
+}
+
+// return: std::future<auto>
+template <typename Fn, typename... Args>
+auto create_thread(Fn fn, Args... args) {
+    std::promise<decltype(fn(args...))> promise;
+    auto future = promise.get_future();
+
+    // TODO INVOKE(DECAY_COPY(std::forward<F>(f)), DECAY_COPY(std::forward<Args>(args))...)
+    auto fn0 = [promise = std::move(promise), fn, args...]() mutable {
+        promise.set_value(fn(args...));
+    };
+    using Fn0 = decltype(fn0);
+    orks::userthread::start_thread(detail::exec_thread<Fn0>, new Fn0(std::move(fn0)));
+    return future;
+}
+
 }
 }
 
