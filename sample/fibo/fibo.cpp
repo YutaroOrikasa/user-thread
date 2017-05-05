@@ -5,11 +5,7 @@
 
 #include "user-thread.hpp"
 
-namespace mymain {
 using namespace orks::userthread;
-
-WorkerManager wm {4};
-}
 
 template <typename Fn>
 void exec_thread(void* func_obj) {
@@ -28,7 +24,7 @@ auto create_thread(Fn fn) {
         promise.set_value(fn());
     };
     using Fn0 = decltype(fn0);
-    mymain::wm.start_thread(exec_thread<Fn0>, new Fn0(std::move(fn0)));
+    orks::userthread::start_thread(exec_thread<Fn0>, new Fn0(std::move(fn0)));
     return future;
 }
 
@@ -43,7 +39,7 @@ long fibo(long n) {
     auto n2 = fibo(n - 2);
     for (; future.wait_for(std::chrono::seconds(0)) != std::future_status::ready;) {
         // std::cout << "wait fibo(" << n << "-1)" << std::endl;
-        mymain::wm.scheduling_yield();
+        orks::userthread::yield();
     }
 
     return n2 + future.get();
@@ -56,7 +52,7 @@ void fibo_main(void*) {
 int main() {
 
     try {
-        mymain::wm.start_main_thread(fibo_main, nullptr);
+        orks::userthread::start_main_thread(fibo_main, nullptr);
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
         return 1;

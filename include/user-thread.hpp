@@ -13,7 +13,7 @@
 
 namespace orks {
 namespace userthread {
-using namespace detail;
+using namespace detail; // I think this is dangerous.
 
 class Thread {
     ThreadData* thread_data;
@@ -103,16 +103,27 @@ public:
 void yield_thread();
 Thread start_thread(void (*func)(void* arg), void* arg);
 
+/*
+* initialize global worker manager with the number of the worker.
+* DO NOT call twice.
+*/
+void init_worker_manager(unsigned int number_of_worker);
+
+/*
+* initialize global worker manager with the number of the cpu cores.
+* DO NOT call twice.
+*/
+void init_worker_manager();
+
+/**
+* This function blocks until all user threads finish.
+*/
+void start_main_thread(void (*func)(void* arg), void* arg);
+
+void yield();
 }
 }
 
-
-namespace {
-// WorkQueue work_queue { 1 };
-
-
-
-}
 
 
 #endif /* USER_THREAD_HPP_ */
