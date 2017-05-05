@@ -100,7 +100,6 @@ public:
 };
 
 
-void yield_thread();
 Thread start_thread(void (*func)(void* arg), void* arg);
 
 /*
