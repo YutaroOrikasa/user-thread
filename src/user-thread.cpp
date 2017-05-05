@@ -36,15 +36,19 @@ void init_worker_manager() {
     }
 }
 
-
 void start_main_thread(void (*func)(void*), void* arg) {
     init_worker_manager();
-    start_main_thread(*worker_manager_ptr, func, arg);
+    worker_manager_ptr->start_main_thread(func, arg);
+}
+
+Thread start_thread(void (*func)(void*), void* arg) {
+    return worker_manager_ptr->start_thread(func, arg);
 }
 
 
-Thread start_thread(void (*func)(void*), void* arg) {
-    return start_thread(*worker_manager_ptr, func, arg);
+
+void yield() {
+    worker_manager_ptr->scheduling_yield();
 }
 }
 }

@@ -119,28 +119,10 @@ void init_worker_manager();
 * This function blocks until all user threads finish.
 */
 void start_main_thread(void (*func)(void* arg), void* arg);
-}
-}
 
-
-namespace orks {
-namespace userthread {
-namespace detail {
-
-inline
-void start_main_thread(WorkerManager& wm, void (*func)(void*), void* arg) {
-    wm.start_main_thread(func, arg);
-}
-
-inline
-Thread start_thread(WorkerManager& wm, void (*func)(void*), void* arg) {
-    return wm.start_thread(func, arg);
-}
-
+void yield();
 }
 }
-}
-
 
 
 
