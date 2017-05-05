@@ -1,6 +1,7 @@
 #include <iostream>
 #include <exception>
 #include <utility>
+#include <string>
 
 #include "user-thread.hpp"
 
@@ -24,10 +25,25 @@ long fibo(long n) {
 void fibo_main(void*) {
     std::cout << "fibo(20) must be 6765. answer: " << fibo(20) << std::endl;
 }
-
-int main() {
+/*
+ * usage:
+ * $ ./fibo 4  # parallel processing with 4 workers
+ * $ ./fibo    # parallel processing with cpu cores numbers workers
+ */
+int main(int argc, char** argv) {
 
     try {
+        int worker_size = [&]() {
+            if (argc >= 2) {
+                return std::stoi(std::string(argv[1]));
+            } else {
+                return 0;
+            }
+        }();
+        if (worker_size > 0) {
+            init_worker_manager(worker_size);
+        }
+
         orks::userthread::start_main_thread(fibo_main, nullptr);
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
