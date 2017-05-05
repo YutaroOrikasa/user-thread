@@ -23,6 +23,7 @@ Worker& get_worker_of_this_native_thread() {
 
 } // detail
 
+using namespace detail;
 
 void init_worker_manager(unsigned int number_of_worker) {
     if (!worker_manager_ptr) {

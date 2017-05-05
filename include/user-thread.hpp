@@ -14,14 +14,13 @@
 
 namespace orks {
 namespace userthread {
-using namespace detail; // I think this is dangerous.
 
 class Thread {
-    ThreadData* thread_data;
+    detail::ThreadData* thread_data;
 
 public:
 
-    explicit Thread(ThreadData& td) :
+    explicit Thread(detail::ThreadData& td) :
         thread_data(&td) {
     }
 
@@ -29,6 +28,7 @@ public:
 
 };
 
+namespace detail {
 class WorkerManager {
     WorkQueue work_queue;
     std::list<Worker> workers;
@@ -99,7 +99,8 @@ public:
         get_worker_of_this_native_thread().schedule_thread();
     }
 };
-
+}
+using detail::WorkerManager;
 
 Thread start_thread(void (*func)(void* arg), void* arg);
 
