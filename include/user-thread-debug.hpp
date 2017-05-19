@@ -79,7 +79,7 @@ Out out;
 }
 
 template <typename ... Args>
-int printf(const char* fmt, Args&& ...args) {
+void printf(const char* fmt, Args&& ...args) {
 #ifdef ORKS_USERTHREAD_DEBUG_OUTBUT
     return OutImpl(std::unique_lock<std::mutex>(debug_out_mutex)).printf(fmt, std::forward<Args>(args)...);
 #endif
@@ -87,7 +87,7 @@ int printf(const char* fmt, Args&& ...args) {
 
 // suppress gcc warning: -Wformat-security
 inline
-int printf(const char* str) {
+void printf(const char* str) {
     return printf("%s", str);
 }
 }
