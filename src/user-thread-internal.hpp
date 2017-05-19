@@ -10,6 +10,9 @@
 #include <memory>
 #include <iostream>
 
+#include <boost/range/irange.hpp>
+
+#include "config.h"
 #include "mysetjmp.h"
 #include "user-thread-debug.hpp"
 
@@ -85,89 +88,127 @@ auto make_unique_lock(Mutex& mutex) {
 }
 } // util
 
-/*
- * pop時にnullptrが返った場合はqueueがcloseされたことを表す。
- */
-class WorkQueue {
-    std::recursive_mutex mutex;
-    std::queue<ThreadData*> queue;
-    std::condition_variable_any cv;
-    const int number_of_workers;
-
-    // pop()を実行しているworkerの数
-    int number_of_hungry_workers = 0;
-
-    // set to true when first push is occured
-    bool is_queue_started = false;
-
-    bool closed = false;
+template<typename T>
+class ThreadSafeQueue {
+    std::mutex mutex;
+    std::queue<T> queue;
 
 public:
 
-    explicit WorkQueue(int number_of_workers) :
-        number_of_workers(number_of_workers) {
-    }
-
-    // you can not push nullptr
-    void push(ThreadData& td) {
-        if (closed) {
-            throw std::logic_error("pushing closed work queue");
-        }
-        push_impl(&td, false);
-    }
-
-    ThreadData* pop() {
+    void push(const T& t) {
         auto lock = util::make_unique_lock(mutex);
-        ++number_of_hungry_workers;
-        auto finally = util::make_scope_exit([&]() {
-            --number_of_hungry_workers;
-        });
+        queue.push(t);
+    }
 
-        // ignore when queue is not started
-        if (is_queue_started) {
-            // if all workers are hungry
-            if (queue.empty() && number_of_hungry_workers == number_of_workers) {
-                close();
+    /*
+     * return true if queue is not empty
+     * return false if else
+     */
+    bool pop(T& t) {
+        auto lock = util::make_unique_lock(mutex);
+        if (queue.empty()) {
+            return false;
+        }
+
+        t = queue.front();
+        queue.pop();
+        return true;
+    }
+
+};
+
+
+/*
+ * pop時にnullptrが返った場合はqueueがcloseされたことを表す。
+ */
+template<typename T,
+         template<typename U> class ThreadSafeQueue = ThreadSafeQueue>
+class WorkStealQueue {
+    std::vector<ThreadSafeQueue<T*>> work_queues;
+    std::atomic_bool closed = { false };
+
+
+public:
+
+    class WorkQueue {
+        ThreadSafeQueue<T*>& queue;
+        WorkStealQueue& wsq;
+        int queue_num;
+
+    public:
+        explicit WorkQueue(ThreadSafeQueue<T*>& q, WorkStealQueue& wsq,
+                           int queue_num) :
+            queue(q), wsq(wsq), queue_num(queue_num) {
+
+        }
+        void push(T& t) {
+            queue.push(&t);
+        }
+
+        T* pop() {
+
+            T* t;
+            if (queue.pop(t)) {
+                return t;
             }
-        }
-        cv.wait(lock, [this]() {
-            return is_queue_started && !this->queue.empty();
-        });
-        ThreadData* td = queue.front();
-        // queueのcloseを表すnullptrがあった場合はpopせずに残す。
-        if (td != nullptr) {
-            queue.pop();
+
+            return wsq.steal();
         }
 
-        debug::printf("WQ::pop %p\n", td);
-        return td;
+        void close() {
+            wsq.close();
+        }
+
+        bool is_closed() {
+            return wsq.is_closed();
+        }
+
+    };
+
+    explicit WorkStealQueue(int num_of_worker) :
+        work_queues(num_of_worker) {
+
     }
 
-private:
-    void push_impl(ThreadData* td, bool notify_all) {
+    /*
+     * return thread local work queue that can steal work from other work queue
+     * *must* index < num_of_worker
+     */
+    WorkQueue get_local_queue(int index) {
+        return WorkQueue { work_queues.at(index), *this, index };
+    }
 
-        auto lock = util::make_unique_lock(mutex);
-        debug::printf("WQ::push %p\n", td);
-        is_queue_started = true;
-        queue.push(td);
 
-        if (notify_all) {
-            cv.notify_all();
-        } else {
-            cv.notify_one();
+    /*
+     * return false if no works left
+     * return true if else
+     */
+    T* steal() {
+
+        for (;;) {
+            if (closed) {
+                return nullptr;
+            }
+
+
+            for (int i : boost::irange(0, static_cast<int>(work_queues.size()))) {
+                auto& queue = work_queues[i];
+                T* t;
+                if (queue.pop(t)) {
+                    return t;
+                }
+            }
+
         }
     }
 
     void close() {
-        debug::printf("WQ::close\n");
-        push_impl(nullptr, true);
         closed = true;
     }
 
-    /*
-     * 内部仕様
-     * すべてのworkerがpopしようとしたことが検出されたらwork queueをcloseする。
-     */
+    bool is_closed() {
+        return closed;
+    }
 
 };
 
@@ -179,7 +220,8 @@ private:
  */
 class Worker {
 
-    WorkQueue& work_queue;
+    using WorkQueue = WorkStealQueue<ThreadData>::WorkQueue;
+    WorkQueue work_queue;
 
     context worker_thread_context;
     ThreadData* current_thread = nullptr;
@@ -187,7 +229,7 @@ class Worker {
     std::thread worker_thread;
 
 public:
-    explicit Worker(WorkQueue& work_queue) :
+    explicit Worker(WorkQueue work_queue) :
         work_queue(work_queue),
         worker_thread([ & ]() {
         do_works();
@@ -217,6 +259,10 @@ public:
             return;
         }
         mylongjmp(worker_thread_context);
+    }
+
+    void create_thread(ThreadData& t) {
+        work_queue.push(t);
     }
 
 private:

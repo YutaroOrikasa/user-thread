@@ -5,28 +5,6 @@
 
 using namespace orks::userthread;
 
-TEST(WorkQueue, FinishAtAllWorkerPop) {
-    using namespace orks::userthread::detail;
-
-    WorkQueue wq { 4 };
-    auto worker = [&]() {
-        while (wq.pop() != nullptr);
-    };
-
-    std::thread th0 { worker };
-    std::thread th1 { worker };
-    std::thread th2 { worker };
-    std::thread th3 { worker };
-    ThreadData td { 0, 0, 0 };
-    wq.push(td);
-
-    th0.join();
-    th1.join();
-    th2.join();
-    th3.join();
-
-
-}
 
 namespace {
 struct Args {

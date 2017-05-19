@@ -30,7 +30,7 @@ public:
 
 namespace detail {
 class WorkerManager {
-    WorkQueue work_queue;
+    WorkStealQueue<ThreadData> work_queue;
     std::list<Worker> workers;
 
     std::mutex mutex_for_threads;
@@ -50,7 +50,7 @@ public:
         work_queue(number_of_worker) {
 
         for (unsigned int i = 0; i < number_of_worker; ++i) {
-            workers.emplace_back(work_queue);
+            workers.emplace_back(work_queue.get_local_queue(i));
         }
     }
 
@@ -65,10 +65,17 @@ public:
      * This function blocks until all user threads finish.
      */
     void start_main_thread(void (*func)(void* arg), void* arg) {
-        threads.emplace_back(func, arg, std::make_unique<char[]>(stack_size));
+
+        // main_thread func wrapper
+        auto main0 = [&]() {
+            func(arg);
+            this->work_queue.close();
+        };
+
+        threads.emplace_back(exec_thread<decltype(main0)>, &main0, std::make_unique<char[]>(stack_size));
         auto& main_thread = threads.back();
 
-        work_queue.push(main_thread);
+        work_queue.get_local_queue(0).push(main_thread);
 
         for (auto& worker : workers) {
             worker.wait();
@@ -85,7 +92,7 @@ public:
             thread_data = &threads.back();
         }
 
-        work_queue.push(*thread_data);
+        get_worker_of_this_native_thread().create_thread(*thread_data);
 
         return Thread(*thread_data);
 
@@ -98,9 +105,21 @@ public:
     void scheduling_yield() {
         get_worker_of_this_native_thread().schedule_thread();
     }
+
+    // static utility function
+    template<typename Fn>
+    static void exec_thread(void* func_obj) {
+        (*static_cast<Fn*>(func_obj))();
+    }
 };
 }
 using detail::WorkerManager;
+
+
+/* 重要!
+ *  main thread が終了した後に新規スレッド作成かyieldをすると未定義動作
+ *  main thread がyield()を呼ぶと未定義動作
+ */
 
 Thread start_thread(void (*func)(void* arg), void* arg);
 
