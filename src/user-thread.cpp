@@ -20,7 +20,7 @@ namespace detail {
 // private
 namespace {
 thread_local Worker* worker_of_this_native_thread;
-thread_local std::string worker_name_of_this_native_thread;
+thread_local std::string worker_name_of_this_native_thread = "(not worker)";
 
 std::unique_ptr<WorkerManager> worker_manager_ptr;
 }
