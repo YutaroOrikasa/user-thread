@@ -1,4 +1,5 @@
 #include <memory>
+#include <sstream>
 
 #include "user-thread.hpp"
 
@@ -19,18 +20,34 @@ namespace detail {
 // private
 namespace {
 thread_local Worker* worker_of_this_native_thread;
+thread_local std::string worker_name_of_this_native_thread;
 
 std::unique_ptr<WorkerManager> worker_manager_ptr;
 }
 
-void register_worker_of_this_native_thread(Worker& worker) {
+void register_worker_of_this_native_thread(Worker& worker, std::string worker_name) {
+
+
+    if (worker_name == "") {
+        std::ostringstream name;
+        name << "<" << std::hex << &worker << ">";
+        worker_name = name.str();
+    }
+
+    std::ostringstream whole_name;
+    whole_name << "worker " << worker_name << " (native thread id " << std::hex << std::this_thread::get_id() << ")";
+
     worker_of_this_native_thread = &worker;
+    worker_name_of_this_native_thread = whole_name.str();
 }
 
 Worker& get_worker_of_this_native_thread() {
     return *worker_of_this_native_thread;
 }
 
+const std::string& get_worker_name_of_this_native_thread() {
+    return worker_name_of_this_native_thread;
+}
 } // detail
 
 using namespace detail;
