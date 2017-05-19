@@ -50,7 +50,7 @@ public:
         work_queue(number_of_worker) {
 
         for (unsigned int i = 0; i < number_of_worker; ++i) {
-            workers.emplace_back(work_queue.get_local_queue(i));
+            workers.emplace_back(work_queue.get_local_queue(i), std::to_string(i));
         }
     }
 
