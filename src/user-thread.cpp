@@ -5,6 +5,16 @@
 namespace orks {
 namespace userthread {
 namespace detail {
+namespace debug {
+std::mutex debug_out_mutex;
+}
+}
+}
+}
+
+namespace orks {
+namespace userthread {
+namespace detail {
 
 // private
 namespace {
