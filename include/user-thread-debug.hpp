@@ -48,13 +48,13 @@ class Out {
 public:
 
     /*
-     * if ORKS_USERTHREAD_DEBUG_OUTBUT is define, output rhs to std::cerr
+     * if ORKS_USERTHREAD_DEBUG_OUTPUT is define, output rhs to std::cerr
      * else, do nothing
      */
     template <typename Rhs>
     auto operator<<(Rhs&& rhs) {
 
-#ifdef ORKS_USERTHREAD_DEBUG_OUTBUT
+#ifdef ORKS_USERTHREAD_DEBUG_OUTPUT
         return OutImpl(std::unique_lock<std::mutex>(debug_out_mutex));
 #else
         // (*this) << "brabrabra"  will do nothing.
@@ -66,7 +66,7 @@ public:
      * for (*this) << std::endl
      */
     auto operator<<(std::ostream & (*pf)(std::ostream&)) {
-#ifdef ORKS_USERTHREAD_DEBUG_OUTBUT
+#ifdef ORKS_USERTHREAD_DEBUG_OUTPUT
         return OutImpl(std::unique_lock<std::mutex>(debug_out_mutex));
 #else
         return *this;
