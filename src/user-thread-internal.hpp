@@ -48,7 +48,7 @@ public:
 void execute_thread(ThreadData& thread_data);
 
 class Worker;
-void register_worker_of_this_native_thread(Worker& worker);
+void register_worker_of_this_native_thread(Worker& worker, std::string worker_name = "");
 Worker& get_worker_of_this_native_thread();
 
 // internal helper
@@ -219,7 +219,6 @@ public:
  * でないとterminateする。
  */
 class Worker {
-
     using WorkQueue = WorkStealQueue<ThreadData>::WorkQueue;
     WorkQueue work_queue;
 
@@ -229,10 +228,10 @@ class Worker {
     std::thread worker_thread;
 
 public:
-    explicit Worker(WorkQueue work_queue) :
+    explicit Worker(WorkQueue work_queue, std::string worker_name = "") :
         work_queue(work_queue),
-        worker_thread([ & ]() {
-        do_works();
+        worker_thread([this, worker_name]() {
+        do_works(worker_name);
     }) {
     }
 
@@ -266,9 +265,9 @@ public:
     }
 
 private:
-    void do_works() {
+    void do_works(std::string worker_name) {
 
-        register_worker_of_this_native_thread(*this);
+        register_worker_of_this_native_thread(*this, worker_name);
 
         debug::printf("worker is wake up!\n");
 

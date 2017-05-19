@@ -7,6 +7,15 @@
 #include <thread>
 
 #include "config.h"
+#include "../src/user-thread-internal.hpp"
+
+namespace orks {
+namespace userthread {
+namespace detail {
+const std::string& get_worker_name_of_this_native_thread();
+}
+}
+}
 
 namespace orks {
 namespace userthread {
@@ -25,7 +34,7 @@ public:
 
     template <typename Rhs>
     OutImpl& operator<<(Rhs&& rhs) {
-        std::cerr << "thread at " << std::this_thread::get_id() << ": " << std::forward<Rhs>(rhs);
+        std::cerr << get_worker_name_of_this_native_thread() << ": " << std::forward<Rhs>(rhs);
         return *this;
     }
 
