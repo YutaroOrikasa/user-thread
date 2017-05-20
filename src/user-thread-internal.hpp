@@ -318,6 +318,7 @@ private:
 
     }
 
+    __attribute__((noinline))
     static void entry_thread(ThreadData& thread_data) {
         debug::printf("start thread in new stack frame\n");
         debug::out << std::endl;
