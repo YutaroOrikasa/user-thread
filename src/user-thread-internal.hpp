@@ -45,7 +45,6 @@ public:
     ThreadData(ThreadData&&) = delete;
 
 };
-void execute_thread(ThreadData& thread_data);
 
 class Worker;
 void register_worker_of_this_native_thread(Worker& worker, std::string worker_name = "");
