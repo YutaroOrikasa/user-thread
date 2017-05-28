@@ -72,14 +72,44 @@ public:
             this->work_queue.close();
         };
 
+        auto dummy = [this]() {
+            for (;;) {
+                debug::printf("### dummy yield\n");
+                this->scheduling_yield();
+                debug::printf("### dummy resume\n");
+                if (this->work_queue.is_closed()) {
+                    debug::printf("### dummy quit\n");
+                    return;
+                }
+            }
+        };
+
         threads.emplace_back(exec_thread<decltype(main0)>, &main0, std::make_unique<char[]>(stack_size));
         auto& main_thread = threads.back();
-
         work_queue.get_local_queue(0).push(main_thread);
+
+        /*
+         * yield() 時に無限ループに陥らないようにするためにworker数分の ダーミースレッドを用意する。
+         * 例えば、8 workers で 8つのuser thread しか存在しない状態で、8つのuser thread が同時にyieldした場合、
+         * queueにスレッドが１つも入っていない状態でstealしようとするので、無限ループが発生する。
+         * 少なくともworker数+1個のスレッドが存在していれば無限ループにはならない。
+         * main thread があることを考えると、worker数分のダミーがあれば良い。
+         *
+         */
+        for (auto i : boost::irange(0ul, workers.size())) {
+            static_cast<void>(i);
+            auto dummy_thread = new ThreadData(exec_thread <decltype(dummy)> , &dummy,
+                                               std::make_unique<char[]>(stack_size));
+            debug::printf("### push dummy thread\n");
+            work_queue.get_local_queue(0).push(*dummy_thread);
+        }
 
         for (auto& worker : workers) {
             worker.wait();
         }
+
+        // TODO
+        // dummy_thread will leak
 
     }
 
@@ -115,11 +145,10 @@ public:
 }
 using detail::WorkerManager;
 
-
 /* 重要!
- *  main thread が終了した後に新規スレッド作成かyieldをすると未定義動作
- *  main thread がyield()を呼ぶと未定義動作
- */
+*  main thread が終了した後に新規スレッド作成かyieldをすると未定義動作
+*  main thread がyield()を呼ぶと未定義動作
+*/
 
 Thread start_thread(void (*func)(void* arg), void* arg);
 

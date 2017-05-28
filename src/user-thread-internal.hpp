@@ -141,6 +141,7 @@ public:
 
         }
         void push(T& t) {
+            debug::printf("WorkQueue::push %p\n", &t);
             queue.push(&t);
         }
 
@@ -148,6 +149,7 @@ public:
 
             T* t;
             if (queue.pop(t)) {
+                debug::printf("WorkQueue::pop %p\n", t);
                 return t;
             }
 
@@ -184,8 +186,10 @@ public:
      */
     T* steal() {
 
-        for (;;) {
+        for (;;) { //for (auto i : boost::irange(0, 100)) {
+            debug::printf("WorkQueue::steal loop\n");
             if (closed) {
+                debug::printf("WorkQueue::steal closed\n");
                 return nullptr;
             }
 
@@ -194,11 +198,13 @@ public:
                 auto& queue = work_queues[i];
                 T* t;
                 if (queue.pop(t)) {
+                    debug::printf("WorkQueue::steal %p\n", t);
                     return t;
                 }
             }
 
         }
+        return nullptr;
     }
 
     void close() {
@@ -222,8 +228,7 @@ class Worker {
     WorkQueue work_queue;
 
     context worker_thread_context;
-    ThreadData* current_thread = nullptr;
-
+    ThreadData* volatile current_thread = nullptr;
     std::thread worker_thread;
 
 public:
@@ -243,6 +248,8 @@ public:
 
     void schedule_thread() {
 
+        // switch した先のスレッドで push([this context]) する必要がある。
+
         if (current_thread == nullptr) {
             debug::printf("err at this: %p\n", this);
             throw std::logic_error("bad operation: yield worker thread");
@@ -252,15 +259,25 @@ public:
 
         current_thread->state = ThreadState::stop;
 
-        if (mysetjmp(current_thread->env)) {
-            debug::printf("jump back!\n");
-            return;
+        auto next_thread = work_queue.pop();
+
+        if (next_thread) {
+            execute_thread(*next_thread, current_thread);
         }
-        mylongjmp(worker_thread_context);
+
     }
 
     void create_thread(ThreadData& t) {
-        work_queue.push(t);
+
+        // create した先のスレッドで push([this context]) する必要がある。
+
+        assert(current_thread != nullptr);
+        debug::printf("switch from %p to %p!\n", current_thread, &t);
+        current_thread->state = ThreadState::stop;
+        if (mysetjmp(current_thread->env)) {
+            current_thread->state = ThreadState::running;
+        }
+        execute_thread(t, current_thread);
     }
 
 private:
@@ -268,7 +285,7 @@ private:
 
         register_worker_of_this_native_thread(*this, worker_name);
 
-        debug::printf("worker is wake up!\n");
+        debug::printf("worker is wake up! this: %p\n", this);
 
         for (;;) {
             ThreadData* thread_data = work_queue.pop();
@@ -286,39 +303,55 @@ private:
 
     }
 
-    void execute_thread(ThreadData& thread_data) {
 
-        debug::printf("start executing user thread!\n");
-        if (mysetjmp(worker_thread_context)) {
-            debug::printf("jumped to worker\n");
-            debug::out << "current_thread after jump: " << current_thread << std::endl;
-            if (current_thread) {
-                // come here when yield() called
-                work_queue.push(*current_thread);
+    void execute_thread(ThreadData& thread_to_execute, ThreadData* previous_thread = nullptr) {
+
+        // called at an user thread
+
+        // at previous_thread context
+        debug::printf("execute_thread()\n");
+        auto& previous_env = previous_thread ? previous_thread->env : worker_thread_context;
+        if (mysetjmp(previous_env)) {
+            // at previous_thread context
+            debug::printf("jumped back to execute_thread() on previous_thread\n");
+            auto& worker = get_worker_of_this_native_thread();
+            auto thread_jump_from = worker.current_thread;
+            if (thread_jump_from != nullptr) {
+                debug::out << "jump from " << thread_jump_from << std::endl;
             }
+            worker.call_me_after_context_switch(previous_thread, thread_jump_from);
+
+            // return to [previous_thread context]schedule_thread() or [worker context]do_works()
+            debug::printf("return to context %p\n", previous_thread);
             return;
         }
 
-        current_thread = &thread_data;
+        // 開始/再開 した先のスレッドで push([this context]) / delete [this context] する必要がある。
 
-        if (thread_data.state == ThreadState::before_launch) {
-            char* stack_frame = thread_data.stack_frame.get();
+        if (thread_to_execute.state == ThreadState::before_launch) {
+            char* stack_frame = thread_to_execute.stack_frame.get();
             debug::printf("launch user thread!\n");
 
             __asm__("movq %0, %%rsp" : : "r"(stack_frame + stack_size) : "%rsp");
+            // at the context of thread_to_execute
+
             // DO NOT touch local variable because the address of stack frame has been changed.
             // you can touch function argument because they are in register.
-            entry_thread(thread_data);
+            entry_thread(thread_to_execute, previous_thread);
 
         } else {
-            thread_data.state = ThreadState::running;
-            mylongjmp(thread_data.env);
+            debug::printf("resume user thread!\n");
+            thread_to_execute.state = ThreadState::running;
+            mylongjmp(thread_to_execute.env);
         }
 
     }
 
     __attribute__((noinline))
-    static void entry_thread(ThreadData& thread_data) {
+    static void entry_thread(ThreadData& thread_data, ThreadData* previous_thread_data) {
+
+        get_worker_of_this_native_thread().call_me_after_context_switch(&thread_data, previous_thread_data);
+
         debug::printf("start thread in new stack frame\n");
         debug::out << std::endl;
         thread_data.state = ThreadState::running;
@@ -332,10 +365,43 @@ private:
         // worker can switch before and after func() called.
         auto& worker = get_worker_of_this_native_thread();
 
-        worker.current_thread = nullptr;
-        // jump to last worker context
-        mylongjmp(worker.worker_thread_context);
+        auto next_thread = worker.work_queue.pop();
+
+        if (next_thread) {
+
+            // 開始/再開 した先のスレッドで delete [this context] する必要がある。
+
+            debug::printf("jump to next thread %p\n", next_thread);
+            worker.execute_thread(*next_thread, &thread_data);
+        } else {
+            debug::printf("jump to worker context\n");
+            mylongjmp(worker.worker_thread_context);
+        }
         // no return
+        // this thread context will be deleted by next thread
+    }
+
+    void call_me_after_context_switch(ThreadData* thread_now, ThreadData* thread_jump_from) {
+
+
+        if (!thread_jump_from) {
+            current_thread = thread_now;
+            return;
+        }
+
+
+
+        if (thread_jump_from->state != ThreadState::ended) {
+            // come here when yield() called
+            // current_thread is one that called yield
+            work_queue.push(*thread_jump_from);
+        } else {
+            // delete thread_jump_from;
+        }
+
+        // current_thread can be nullptr when thread_now is worker thread (thread_jump_from == nullptr)
+        current_thread = thread_now;
+
     }
 
 };

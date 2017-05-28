@@ -46,7 +46,7 @@ void main_thread_for_test_yield(void* arg) {
 
 TEST(WorkerManager, Test) {
 
-    WorkerManager wm { 4 };
+    WorkerManager wm { 1 };
     std::atomic_int counter { 0 };
     int thread_size = 8;
     Args args = { wm, thread_size, counter };
@@ -56,7 +56,7 @@ TEST(WorkerManager, Test) {
 
 TEST(WorkerManager, TestYield) {
 
-    WorkerManager wm { 4 };
+    WorkerManager wm { 1 };
     std::atomic_int counter { 0 };
     int thread_size = 8;
     Args args = { wm, thread_size, counter };
