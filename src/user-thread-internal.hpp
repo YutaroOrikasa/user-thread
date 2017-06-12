@@ -3,9 +3,7 @@
 
 #include <cstdio>
 #include <list>
-#include <queue>
 #include <thread>
-#include <mutex>
 #include <condition_variable>
 #include <memory>
 #include <iostream>
@@ -15,6 +13,9 @@
 #include "config.h"
 #include "mysetjmp.h"
 #include "user-thread-debug.hpp"
+#include "workqueue.hpp"
+
+#include "call_with_alt_stack_arg3.h"
 
 namespace orks {
 namespace userthread {
@@ -50,166 +51,22 @@ class Worker;
 void register_worker_of_this_native_thread(Worker& worker, std::string worker_name = "");
 Worker& get_worker_of_this_native_thread();
 
-// internal helper
-namespace util {
-
-template<typename F>
-class scope_exit {
-    F f;
-    bool execute;
-public:
-    explicit scope_exit(F disposer) :
-        f(disposer), execute(true) {
-    }
-    scope_exit(scope_exit&& other) :
-        f(other.f), execute(other.execute) {
-        other.execute = false;
-    }
-    ~scope_exit() {
-        if (execute) {
-            try {
-                f();
-            } catch (...) {
-            }
-        }
-    }
-
+struct Stack {
+    std::unique_ptr<char[]> stack;
+    std::size_t size;
 };
 
-template<typename F>
-auto make_scope_exit(F f) {
-    return scope_exit<F>(f);
+inline
+void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* func, void* arg1, void* arg2, void* arg3) {
+    void* stack_base = altstack + altstack_size;
+    debug::printf("func %p\n", func);
+    orks_private_call_with_alt_stack_arg3_impl(arg1, arg2, arg3, stack_base, func);
 }
 
-template<class Mutex>
-auto make_unique_lock(Mutex& mutex) {
-    return std::unique_lock<Mutex>(mutex);
+inline
+void call_with_alt_stack_arg3(Stack& altstack, void* func, void* arg1, void* arg2, void* arg3) {
+    call_with_alt_stack_arg3(altstack.stack.get(), altstack.size, func, arg1, arg2, arg3);
 }
-} // util
-
-template<typename T>
-class ThreadSafeQueue {
-    std::mutex mutex;
-    std::queue<T> queue;
-
-public:
-
-    void push(const T& t) {
-        auto lock = util::make_unique_lock(mutex);
-        queue.push(t);
-    }
-
-    /*
-     * return true if queue is not empty
-     * return false if else
-     */
-    bool pop(T& t) {
-        auto lock = util::make_unique_lock(mutex);
-        if (queue.empty()) {
-            return false;
-        }
-
-        t = queue.front();
-        queue.pop();
-        return true;
-    }
-
-};
-
-
-/*
- * pop時にnullptrが返った場合はqueueがcloseされたことを表す。
- */
-template<typename T,
-         template<typename U> class ThreadSafeQueue = ThreadSafeQueue>
-class WorkStealQueue {
-    std::vector<ThreadSafeQueue<T*>> work_queues;
-    std::atomic_bool closed = { false };
-
-
-public:
-
-    class WorkQueue {
-        ThreadSafeQueue<T*>& queue;
-        WorkStealQueue& wsq;
-        int queue_num;
-
-    public:
-        explicit WorkQueue(ThreadSafeQueue<T*>& q, WorkStealQueue& wsq,
-                           int queue_num) :
-            queue(q), wsq(wsq), queue_num(queue_num) {
-
-        }
-        void push(T& t) {
-            queue.push(&t);
-        }
-
-        T* pop() {
-
-            T* t;
-            if (queue.pop(t)) {
-                return t;
-            }
-
-            return wsq.steal();
-        }
-
-        void close() {
-            wsq.close();
-        }
-
-        bool is_closed() {
-            return wsq.is_closed();
-        }
-
-    };
-
-    explicit WorkStealQueue(int num_of_worker) :
-        work_queues(num_of_worker) {
-
-    }
-
-    /*
-     * return thread local work queue that can steal work from other work queue
-     * *must* index < num_of_worker
-     */
-    WorkQueue get_local_queue(int index) {
-        return WorkQueue { work_queues.at(index), *this, index };
-    }
-
-
-    /*
-     * return false if no works left
-     * return true if else
-     */
-    T* steal() {
-
-        for (;;) {
-            if (closed) {
-                return nullptr;
-            }
-
-
-            for (int i : boost::irange(0, static_cast<int>(work_queues.size()))) {
-                auto& queue = work_queues[i];
-                T* t;
-                if (queue.pop(t)) {
-                    return t;
-                }
-            }
-
-        }
-    }
-
-    void close() {
-        closed = true;
-    }
-
-    bool is_closed() {
-        return closed;
-    }
-
-};
 
 
 /*
@@ -222,16 +79,23 @@ class Worker {
     WorkQueue work_queue;
 
     context worker_thread_context;
-    ThreadData* current_thread = nullptr;
+    ThreadData* volatile current_thread = nullptr;
+    Stack alternative_stack = {};
 
     std::thread worker_thread;
 
+
+
+
 public:
     explicit Worker(WorkQueue work_queue, std::string worker_name = "") :
-        work_queue(work_queue),
-        worker_thread([this, worker_name]() {
-        do_works(worker_name);
-    }) {
+        work_queue(work_queue) {
+        alternative_stack.stack = std::make_unique<char[]>(stack_size);
+        alternative_stack.size = stack_size;
+
+        worker_thread = std::thread([this, worker_name]() {
+            do_works(worker_name);
+        });
     }
 
     Worker(const Worker&) = delete;
@@ -243,24 +107,31 @@ public:
 
     void schedule_thread() {
 
-        if (current_thread == nullptr) {
-            debug::printf("err at this: %p\n", this);
-            throw std::logic_error("bad operation: yield worker thread");
-        }
+        auto this_thread = current_thread;
+        assert(this_thread != nullptr);
+        debug::printf("yield from: %p\n", this_thread);
 
-        debug::printf("yield from: %p\n", current_thread);
-
-        current_thread->state = ThreadState::stop;
-
-        if (mysetjmp(current_thread->env)) {
-            debug::printf("jump back!\n");
+        this_thread->state = ThreadState::stop;
+        if (mysetjmp(this_thread->env)) {
+            this_thread->state = ThreadState::running;
             return;
         }
-        mylongjmp(worker_thread_context);
+        execute_next_thread(*this);
+
     }
 
     void create_thread(ThreadData& t) {
-        work_queue.push(t);
+
+        auto this_thread = current_thread;
+        assert(this_thread != nullptr);
+        debug::printf("thread %p created at %p!\n", &t, this_thread);
+        this_thread->state = ThreadState::stop;
+        if (mysetjmp(this_thread->env)) {
+            this_thread->state = ThreadState::running;
+            return;
+        }
+        // mylongjmp(this_thread->env);
+        execute_next_thread(*this, &t);
     }
 
 private:
@@ -268,57 +139,140 @@ private:
 
         register_worker_of_this_native_thread(*this, worker_name);
 
-        debug::printf("worker is wake up!\n");
+        debug::printf("worker is wake up! this: %p\n", this);
 
-        for (;;) {
-            ThreadData* thread_data = work_queue.pop();
-            debug::printf("this %p pop %p\n", this, thread_data);
-            if (!thread_data) {
-                debug::printf("worker will quit\n");
-                return;
-            }
-
-            debug::printf("stack frame is at %p\n", thread_data->stack_frame.get());
-
-            execute_thread(*thread_data);
-
-        }
-
-    }
-
-    void execute_thread(ThreadData& thread_data) {
-
-        debug::printf("start executing user thread!\n");
         if (mysetjmp(worker_thread_context)) {
-            debug::printf("jumped to worker\n");
-            debug::out << "current_thread after jump: " << current_thread << std::endl;
-            if (current_thread) {
-                // come here when yield() called
-                work_queue.push(*current_thread);
-            }
+            debug::printf("worker will quit\n");
             return;
         }
 
-        current_thread = &thread_data;
+        execute_next_thread(*this);
+        // never_come_here
+        assert(false);
 
-        if (thread_data.state == ThreadState::before_launch) {
-            char* stack_frame = thread_data.stack_frame.get();
+    }
+
+
+//    void execute_thread(ThreadData& thread_to_execute, ThreadData* previous_thread = nullptr) {
+//
+//        // called at an user thread
+//
+//        // at previous_thread context
+//        debug::printf("execute_thread()\n");
+//        auto& previous_env = previous_thread ? previous_thread->env : worker_thread_context;
+//        if (mysetjmp(previous_env)) {
+//            // at previous_thread context
+//            debug::printf("jumped back to execute_thread() on previous_thread\n");
+//            auto& worker = get_worker_of_this_native_thread();
+//            auto thread_jump_from = worker.current_thread;
+//            if (thread_jump_from != nullptr) {
+//                debug::out << "jump from " << thread_jump_from << std::endl;
+//            }
+//            worker.call_me_after_context_switch(previous_thread, thread_jump_from);
+//
+//            // return to [previous_thread context]schedule_thread() or [worker context]do_works()
+//            debug::printf("return to context %p\n", previous_thread);
+//            return;
+//        }
+//
+//        // 開始/再開 した先のスレッドで push([this context]) / delete [this context] する必要がある。
+//
+//        if (thread_to_execute.state == ThreadState::before_launch) {
+//            char* stack_frame = thread_to_execute.stack_frame.get();
+//            debug::printf("launch user thread!\n");
+//
+//            __asm__("movq %0, %%rsp" : : "r"(stack_frame + stack_size) : "%rsp");
+//            // at the context of thread_to_execute
+//
+//            // DO NOT touch local variable because the address of stack frame has been changed.
+//            // you can touch function argument because they are in register.
+//            entry_thread(thread_to_execute, previous_thread);
+//
+//        } else {
+//            debug::printf("resume user thread!\n");
+//            thread_to_execute.state = ThreadState::running;
+//            mylongjmp(thread_to_execute.env);
+//        }
+//
+//    }
+
+    static void execute_next_thread(Worker& worker, ThreadData* next = nullptr) {
+        debug::printf("execute_next_thread_impl %p\n", execute_next_thread_impl);
+        call_with_alt_stack_arg3(worker.alternative_stack, reinterpret_cast<void*>(execute_next_thread_impl), &worker, next, nullptr);
+//        __asm__("movq %0, %%rsp" : : "r") : "%rsp");
+//        execute_next_thread_impl(worker, next);
+
+    }
+
+    static void execute_next_thread_impl(Worker& worker_before_switch, ThreadData* p_next_thread) {
+
+
+        ThreadData* previous_thread = worker_before_switch.current_thread;
+
+        if (!p_next_thread) {
+            // pop before push
+            p_next_thread = worker_before_switch.work_queue.pop();
+        }
+
+        if (previous_thread) {
+            if (previous_thread->state == ThreadState::ended) {
+                // delete previous_thread
+            } else {
+                // push after pop
+                worker_before_switch.work_queue.push(*previous_thread);
+            }
+        }
+
+
+        // guard
+        if (!p_next_thread) {
+            worker_before_switch.current_thread = nullptr;
+            mylongjmp(worker_before_switch.worker_thread_context);
+        }
+
+        ThreadData& next_thread = *p_next_thread;
+        debug::printf("execute thread %p, stack frame is %p\n", &next_thread, next_thread.stack_frame.get());
+
+        worker_before_switch.current_thread = &next_thread;
+
+        // at previous_thread context
+//        if (mysetjmp(previous_thread->env)) {
+//            // at previous_thread context
+//            debug::printf("jumped back to execute_thread() on previous_thread\n");
+//            auto& worker_after_switch = get_worker_of_this_native_thread();
+//            auto thread_jump_from = worker_after_switch.current_thread;
+//            if (thread_jump_from != nullptr) {
+//                debug::out << "jump from " << thread_jump_from << std::endl;
+//            }
+//            worker_after_switch.call_me_after_context_switch(previous_thread, thread_jump_from);
+//
+//            // return to [previous_thread context]schedule_thread() or [worker context]do_works()
+//            debug::printf("return to context %p\n", previous_thread);
+//            return;
+//        }
+
+        if (next_thread.state == ThreadState::before_launch) {
+            char* stack_frame = next_thread.stack_frame.get();
             debug::printf("launch user thread!\n");
 
             __asm__("movq %0, %%rsp" : : "r"(stack_frame + stack_size) : "%rsp");
+            // at the context of next_thread
+
             // DO NOT touch local variable because the address of stack frame has been changed.
             // you can touch function argument because they are in register.
-            entry_thread(thread_data);
+            call_with_alt_stack_arg3(stack_frame, stack_size, reinterpret_cast<void*>(entry_thread), &next_thread, nullptr, nullptr);
 
         } else {
-            thread_data.state = ThreadState::running;
-            mylongjmp(thread_data.env);
+            debug::printf("resume user thread %p!\n", &next_thread);
+            next_thread.state = ThreadState::running;
+            mylongjmp(next_thread.env);
         }
 
     }
 
-    __attribute__((noinline))
+
     static void entry_thread(ThreadData& thread_data) {
+
         debug::printf("start thread in new stack frame\n");
         debug::out << std::endl;
         thread_data.state = ThreadState::running;
@@ -332,11 +286,33 @@ private:
         // worker can switch before and after func() called.
         auto& worker = get_worker_of_this_native_thread();
 
-        worker.current_thread = nullptr;
-        // jump to last worker context
-        mylongjmp(worker.worker_thread_context);
+        execute_next_thread(worker);
         // no return
+        // this thread context will be deleted by next thread
     }
+
+//    void call_me_after_context_switch(ThreadData* thread_now, ThreadData* thread_jump_from) {
+//
+//
+//        if (!thread_jump_from) {
+//            current_thread = thread_now;
+//            return;
+//        }
+//
+//
+//
+//        if (thread_jump_from->state != ThreadState::ended) {
+//            // come here when yield() called
+//            // current_thread is one that called yield
+//            work_queue.push(*thread_jump_from);
+//        } else {
+//            // delete thread_jump_from;
+//        }
+//
+//        // current_thread can be nullptr when thread_now is worker thread (thread_jump_from == nullptr)
+//        current_thread = thread_now;
+//
+//    }
 
 };
 
