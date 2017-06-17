@@ -13,6 +13,7 @@
 #include "mysetjmp.h"
 #include "user-thread-debug.hpp"
 #include "workqueue.hpp"
+#include "stackallocators.hpp"
 
 #include "call_with_alt_stack_arg3.h"
 
@@ -22,31 +23,6 @@ namespace orks {
 namespace userthread {
 namespace detail {
 
-struct SimpleStackAllocator {
-    static constexpr size_t stack_size = 0xffff;
-
-    struct Deleter {
-        void operator()(char* p) {
-            SimpleStackAllocator::deallocate(p);
-        }
-    };
-
-    struct Stack {
-        std::unique_ptr<char[], SimpleStackAllocator::Deleter> stack;
-        std::size_t size = stack_size;
-    };
-
-    static Stack allocate() {
-        return Stack{
-            std::unique_ptr<char[], SimpleStackAllocator::Deleter>(new char[stack_size])
-        };
-    }
-
-    static void deallocate(char* p) {
-        delete[] p;
-    }
-
-};
 #ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
 using StackAllocator = ORKS_USERTHREAD_STACK_ALLOCATOR;
 #else
