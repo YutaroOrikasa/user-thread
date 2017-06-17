@@ -10,18 +10,27 @@
 
 #include <boost/range/irange.hpp>
 
-#include "config.h"
 #include "mysetjmp.h"
 #include "user-thread-debug.hpp"
 #include "workqueue.hpp"
+#include "stackallocators.hpp"
 
 #include "call_with_alt_stack_arg3.h"
+
+#include "config.h"
 
 namespace orks {
 namespace userthread {
 namespace detail {
 
-constexpr size_t stack_size = 0xffff;
+#ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
+using StackAllocator = ORKS_USERTHREAD_STACK_ALLOCATOR;
+#else
+using StackAllocator = SimpleStackAllocator;
+#endif
+using Stack = StackAllocator::Stack;
+
+
 enum class ThreadState {
     running, ended, before_launch, stop
 };
@@ -29,13 +38,12 @@ enum class ThreadState {
 struct ThreadData {
     void (*func)(void* arg);
     void* arg;
-    const std::unique_ptr<char[]> stack_frame;
+    const Stack stack_frame;
     context env;
     ThreadState state = ThreadState::before_launch;
 
 public:
-    ThreadData(void (*func)(void* arg), void* arg,
-               std::unique_ptr<char[]> stack_frame)
+    ThreadData(void (*func)(void* arg), void* arg, Stack stack_frame)
         : func(func)
         , arg(arg)
         , stack_frame(std::move(stack_frame)) {
@@ -51,10 +59,6 @@ class Worker;
 void register_worker_of_this_native_thread(Worker& worker, std::string worker_name = "");
 Worker& get_worker_of_this_native_thread();
 
-struct Stack {
-    std::unique_ptr<char[]> stack;
-    std::size_t size;
-};
 
 inline
 void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* func, void* arg1, void* arg2, void* arg3) {
@@ -90,8 +94,7 @@ class Worker {
 public:
     explicit Worker(WorkQueue work_queue, std::string worker_name = "") :
         work_queue(work_queue) {
-        alternative_stack.stack = std::make_unique<char[]>(stack_size);
-        alternative_stack.size = stack_size;
+        alternative_stack = StackAllocator::allocate();
 
         worker_thread = std::thread([this, worker_name]() {
             do_works(worker_name);
@@ -231,7 +234,7 @@ private:
         }
 
         ThreadData& next_thread = *p_next_thread;
-        debug::printf("execute thread %p, stack frame is %p\n", &next_thread, next_thread.stack_frame.get());
+        debug::printf("execute thread %p, stack frame is %p\n", &next_thread, next_thread.stack_frame.stack.get());
 
         worker_before_switch.current_thread = &next_thread;
 
@@ -252,15 +255,15 @@ private:
 //        }
 
         if (next_thread.state == ThreadState::before_launch) {
-            char* stack_frame = next_thread.stack_frame.get();
+            char* stack_frame = next_thread.stack_frame.stack.get();
             debug::printf("launch user thread!\n");
 
-            __asm__("movq %0, %%rsp" : : "r"(stack_frame + stack_size) : "%rsp");
+            __asm__("movq %0, %%rsp" : : "r"(stack_frame + next_thread.stack_frame.size) : "%rsp");
             // at the context of next_thread
 
             // DO NOT touch local variable because the address of stack frame has been changed.
             // you can touch function argument because they are in register.
-            call_with_alt_stack_arg3(stack_frame, stack_size, reinterpret_cast<void*>(entry_thread), &next_thread, nullptr, nullptr);
+            call_with_alt_stack_arg3(stack_frame, next_thread.stack_frame.size, reinterpret_cast<void*>(entry_thread), &next_thread, nullptr, nullptr);
 
         } else {
             debug::printf("resume user thread %p!\n", &next_thread);
