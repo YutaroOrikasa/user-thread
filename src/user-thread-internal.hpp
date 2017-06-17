@@ -10,12 +10,13 @@
 
 #include <boost/range/irange.hpp>
 
-#include "config.h"
 #include "mysetjmp.h"
 #include "user-thread-debug.hpp"
 #include "workqueue.hpp"
 
 #include "call_with_alt_stack_arg3.h"
+
+#include "config.h"
 
 namespace orks {
 namespace userthread {
@@ -46,7 +47,11 @@ struct SimpleStackAllocator {
     }
 
 };
+#ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
+using StackAllocator = ORKS_USERTHREAD_STACK_ALLOCATOR;
+#else
 using StackAllocator = SimpleStackAllocator;
+#endif
 using Stack = StackAllocator::Stack;
 
 
