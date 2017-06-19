@@ -258,11 +258,6 @@ private:
             char* stack_frame = next_thread.stack_frame.stack.get();
             debug::printf("launch user thread!\n");
 
-            __asm__("movq %0, %%rsp" : : "r"(stack_frame + next_thread.stack_frame.size) : "%rsp");
-            // at the context of next_thread
-
-            // DO NOT touch local variable because the address of stack frame has been changed.
-            // you can touch function argument because they are in register.
             call_with_alt_stack_arg3(stack_frame, next_thread.stack_frame.size, reinterpret_cast<void*>(entry_thread), &next_thread, nullptr, nullptr);
 
         } else {
