@@ -22,13 +22,19 @@ long fibo(long n) {
     return n2 + future.get();
 }
 
-void fibo_main(void*) {
-    std::cout << "fibo(20) must be 6765. answer: " << fibo(20) << std::endl;
+void fibo_main(void* int_ptr) {
+    if (!int_ptr) {
+        std::cout << "fibo(20) must be 6765. answer: " << fibo(20) << std::endl;
+    } else {
+        int n = *static_cast<int*>(int_ptr);
+        std::cout << "fibo(" << n << ") is: " << fibo(n) << std::endl;
+    }
 }
 /*
  * usage:
- * $ ./fibo 4  # parallel processing with 4 workers
- * $ ./fibo    # parallel processing with cpu cores numbers workers
+ * $ ./fibo 4    # parallel processing with 4 workers
+ * $ ./fibo      # parallel processing with cpu cores numbers workers
+ * $ ./fibo 4 10 # calc fibo(10) with 4 workers
  */
 int main(int argc, char** argv) {
 
@@ -44,7 +50,13 @@ int main(int argc, char** argv) {
             init_worker_manager(worker_size);
         }
 
-        orks::userthread::start_main_thread(fibo_main, nullptr);
+        if (argc >= 3) {
+            int n = std::stoi(std::string(argv[2]));
+            orks::userthread::start_main_thread(fibo_main, &n);
+        } else {
+            orks::userthread::start_main_thread(fibo_main, nullptr);
+        }
+
     } catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
         return 1;
