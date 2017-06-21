@@ -8,7 +8,7 @@ namespace userthread {
 namespace detail {
 
 struct SimpleStackAllocator {
-    static constexpr size_t stack_size = 0xffff;
+    static constexpr size_t stack_size = 0x4000;
 
     struct Deleter {
         void operator()(char* p) {
@@ -18,7 +18,7 @@ struct SimpleStackAllocator {
 
     struct Stack {
         std::unique_ptr<char[], SimpleStackAllocator::Deleter> stack;
-        std::size_t size = stack_size;
+        const std::size_t size = stack_size;
     };
 
     static Stack allocate() {

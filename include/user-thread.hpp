@@ -84,7 +84,7 @@ public:
             }
         };
 
-        threads.emplace_back(exec_thread<decltype(main0)>, &main0, SimpleStackAllocator::allocate());
+        threads.emplace_back(exec_thread<decltype(main0)>, &main0, StackAllocator::allocate());
         auto& main_thread = threads.back();
         work_queue.get_local_queue(0).push(main_thread);
 

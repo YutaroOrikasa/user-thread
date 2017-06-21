@@ -8,7 +8,7 @@
 using namespace orks::userthread;
 
 long fibo(long n) {
-    // std::cout << "fibo(" << n << ")" << std::endl;
+
     if (n == 0 || n == 1) {
         return  n;
     }
