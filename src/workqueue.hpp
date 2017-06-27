@@ -1,7 +1,7 @@
 #ifndef USER_THREAD_WORKQUEUE_HPP
 #define USER_THREAD_WORKQUEUE_HPP
 
-#include <queue>
+#include <deque>
 
 #include "util.hpp"
 
@@ -12,13 +12,13 @@ namespace detail {
 template<typename T>
 class ThreadSafeQueue {
     std::mutex mutex;
-    std::queue<T> queue;
+    std::deque<T> queue;
 
 public:
 
     void push(const T& t) {
         auto lock = util::make_unique_lock(mutex);
-        queue.push(t);
+        queue.push_back(t);
     }
 
     /*
@@ -31,8 +31,19 @@ public:
             return false;
         }
 
+        t = queue.back();
+        queue.pop_back();
+        return true;
+    }
+
+    bool pop_front(T& t) {
+        auto lock = util::make_unique_lock(mutex);
+        if (queue.empty()) {
+            return false;
+        }
+
         t = queue.front();
-        queue.pop();
+        queue.pop_front();
         return true;
     }
 
@@ -43,21 +54,21 @@ public:
  * pop時にnullptrが返った場合はqueueがcloseされたことを表す。
  */
 template<typename T,
-         template<typename U> class ThreadSafeQueue = ThreadSafeQueue>
+         template<typename U> class ThreadSafeDeque = ThreadSafeQueue>
 class WorkStealQueue {
-    std::vector<ThreadSafeQueue<T*>> work_queues;
+    std::vector<ThreadSafeDeque<T*>> work_queues;
     std::atomic_bool closed = { false };
 
 
 public:
 
     class WorkQueue {
-        ThreadSafeQueue<T*>& queue;
+        ThreadSafeDeque<T*>& queue;
         WorkStealQueue& wsq;
         int queue_num;
 
     public:
-        explicit WorkQueue(ThreadSafeQueue<T*>& q, WorkStealQueue& wsq,
+        explicit WorkQueue(ThreadSafeDeque<T*>& q, WorkStealQueue& wsq,
                            int queue_num) :
             queue(q), wsq(wsq), queue_num(queue_num) {
 
@@ -119,7 +130,7 @@ public:
             for (int i : boost::irange(0, static_cast<int>(work_queues.size()))) {
                 auto& queue = work_queues[i];
                 T* t;
-                if (queue.pop(t)) {
+                if (queue.pop_front(t)) {
                     debug::printf("WorkQueue::steal %p\n", t);
                     return t;
                 }
