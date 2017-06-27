@@ -14,10 +14,13 @@
 #include "user-thread-debug.hpp"
 #include "workqueue.hpp"
 #include "stackallocators.hpp"
+#include "splitstackapi.h"
 
 #include "call_with_alt_stack_arg3.h"
 
 #include "config.h"
+
+
 
 namespace orks {
 namespace userthread {
@@ -42,11 +45,28 @@ struct ThreadData {
     context env;
     ThreadState state = ThreadState::before_launch;
 
+#ifdef USE_SPLITSTACKS
+    void* split_stacks_boundary = 0;
+#endif
+
 public:
     ThreadData(void (*func)(void* arg), void* arg, Stack stack_frame)
         : func(func)
         , arg(arg)
         , stack_frame(std::move(stack_frame)) {
+
+        assert(this->stack_frame.stack.get() != 0);
+
+#ifdef USE_SPLITSTACKS
+        void* bottom = this->stack_frame.stack.get() + this->stack_frame.size;
+        split_stacks_boundary = __morestack_make_guard(bottom, stack_frame.size);
+
+        debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", this->stack_frame.stack.get(),
+                      static_cast<unsigned long>(this->stack_frame.size));
+        debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
+        assert(split_stacks_boundary < bottom);
+#endif
+
     }
 
     // non copyable
@@ -59,13 +79,26 @@ class Worker;
 void register_worker_of_this_native_thread(Worker& worker, std::string worker_name = "");
 Worker& get_worker_of_this_native_thread();
 
+inline
+void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* func, void* arg1, void* arg2, void* arg3) __attribute__((no_split_stack));
 
 inline
 void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* func, void* arg1, void* arg2, void* arg3) {
     void* stack_base = altstack + altstack_size;
+#ifndef USE_SPLITSTACKS
+    // stack boundary was already changed by caller.
+    // debug output will make memory destorying.
     debug::printf("func %p\n", func);
+#endif
+
+#ifdef USE_SPLITSTACKS
+    assert(__morestack_get_guard() < stack_base);
+#endif
     orks_private_call_with_alt_stack_arg3_impl(arg1, arg2, arg3, stack_base, func);
 }
+
+inline
+void call_with_alt_stack_arg3(Stack& altstack, void* func, void* arg1, void* arg2, void* arg3) __attribute__((no_split_stack));
 
 inline
 void call_with_alt_stack_arg3(Stack& altstack, void* func, void* arg1, void* arg2, void* arg3) {
@@ -89,13 +122,19 @@ class Worker {
     std::thread worker_thread;
 
 
-
+#ifdef USE_SPLITSTACKS
+    void* const split_stacks_boundary = 0;
+#endif
 
 public:
     explicit Worker(WorkQueue work_queue, std::string worker_name = "") :
-        work_queue(work_queue) {
-        alternative_stack = StackAllocator::allocate();
-
+        work_queue(work_queue),
+        alternative_stack(StackAllocator::allocate())
+#ifdef USE_SPLITSTACKS
+        ,
+        split_stacks_boundary(__morestack_make_guard(alternative_stack.stack.get() + alternative_stack.size, alternative_stack.size))
+#endif
+    {
         worker_thread = std::thread([this, worker_name]() {
             do_works(worker_name);
         });
@@ -115,7 +154,16 @@ public:
         debug::printf("yield from: %p\n", this_thread);
 
         this_thread->state = ThreadState::stop;
+#ifdef USE_SPLITSTACKS
+        this_thread->split_stacks_boundary = __morestack_get_guard();
+#endif
+
+
         if (mysetjmp(this_thread->env)) {
+
+#ifdef USE_SPLITSTACKS
+            __morestack_set_guard(this_thread->split_stacks_boundary);
+#endif
             this_thread->state = ThreadState::running;
             return;
         }
@@ -129,8 +177,18 @@ public:
         assert(this_thread != nullptr);
         debug::printf("thread %p created at %p!\n", &t, this_thread);
         this_thread->state = ThreadState::stop;
+#ifdef USE_SPLITSTACKS
+        this_thread->split_stacks_boundary = __morestack_get_guard();
+#endif
+
+
         if (mysetjmp(this_thread->env)) {
+
+#ifdef USE_SPLITSTACKS
+            __morestack_set_guard(this_thread->split_stacks_boundary);
+#endif
             this_thread->state = ThreadState::running;
+
             return;
         }
         // mylongjmp(this_thread->env);
@@ -149,6 +207,15 @@ private:
             return;
         }
 
+#ifdef USE_SPLITSTACKS
+        void* bottom = alternative_stack.stack.get() + alternative_stack.size;
+        debug::printf("stack upper boundary of alt stack: %p\n", alternative_stack.stack.get());
+        debug::printf("stack boundary of alt stack      : %p\n", split_stacks_boundary);
+        debug::printf("stack bottom of alt stack        : %p\n", bottom);
+        debug::out << "stack size of alt stack          : " << alternative_stack.size << std::endl;
+        assert(split_stacks_boundary < bottom);
+        assert(alternative_stack.stack.get() <= split_stacks_boundary);
+#endif
         execute_next_thread(*this);
         // never_come_here
         assert(false);
@@ -201,11 +268,15 @@ private:
 
     static void execute_next_thread(Worker& worker, ThreadData* next = nullptr) {
         debug::printf("execute_next_thread_impl %p\n", execute_next_thread_impl);
+#ifdef USE_SPLITSTACKS
+        __morestack_set_guard(worker.split_stacks_boundary);
+#endif
         call_with_alt_stack_arg3(worker.alternative_stack, reinterpret_cast<void*>(execute_next_thread_impl), &worker, next, nullptr);
 //        __asm__("movq %0, %%rsp" : : "r") : "%rsp");
 //        execute_next_thread_impl(worker, next);
 
     }
+
 
     static void execute_next_thread_impl(Worker& worker_before_switch, ThreadData* p_next_thread) {
 
@@ -258,11 +329,17 @@ private:
             char* stack_frame = next_thread.stack_frame.stack.get();
             debug::printf("launch user thread!\n");
 
+#ifdef USE_SPLITSTACKS
+            __morestack_set_guard(next_thread.split_stacks_boundary);
+#endif
             call_with_alt_stack_arg3(stack_frame, next_thread.stack_frame.size, reinterpret_cast<void*>(entry_thread), &next_thread, nullptr, nullptr);
 
         } else {
             debug::printf("resume user thread %p!\n", &next_thread);
             next_thread.state = ThreadState::running;
+#ifdef USE_SPLITSTACKS
+            __morestack_set_guard(next_thread.split_stacks_boundary);
+#endif
             mylongjmp(next_thread.env);
         }
 
