@@ -34,7 +34,7 @@ public:
 
     template <typename Rhs>
     OutImpl& operator<<(Rhs&& rhs) {
-        std::cerr << get_worker_name_of_this_native_thread() << ": " << std::forward<Rhs>(rhs);
+        std::cerr << std::forward<Rhs>(rhs);
         return *this;
     }
 
@@ -48,8 +48,11 @@ public:
 
     template <typename ... Args>
     int printf(const char* fmt, Args&& ...args) {
-        (*this) << "";
         return std::fprintf(stderr, fmt, std::forward<Args>(args)...);
+    }
+
+    void print_thread_name() {
+        (*this) << get_worker_name_of_this_native_thread() << ": ";
     }
 };
 
@@ -64,7 +67,10 @@ public:
     auto operator<<(Rhs&& rhs) {
 
 #ifdef ORKS_USERTHREAD_DEBUG_OUTPUT
-        return OutImpl(std::unique_lock<std::mutex>(debug_out_mutex));
+        OutImpl out {std::unique_lock<std::mutex>(debug_out_mutex)};
+        out.print_thread_name();
+        out << std::forward<Rhs>(rhs);
+        return std::move(out);
 #else
         // (*this) << "brabrabra"  will do nothing.
         return *this;
@@ -76,7 +82,10 @@ public:
      */
     auto operator<<(std::ostream & (*pf)(std::ostream&)) {
 #ifdef ORKS_USERTHREAD_DEBUG_OUTPUT
-        return OutImpl(std::unique_lock<std::mutex>(debug_out_mutex));
+        OutImpl out {std::unique_lock<std::mutex>(debug_out_mutex)};
+        out.print_thread_name();
+        out << pf;
+        return std::move(out);
 #else
         return *this;
 #endif
@@ -90,7 +99,9 @@ Out out;
 template <typename ... Args>
 int printf(const char* fmt, Args&& ...args) {
 #ifdef ORKS_USERTHREAD_DEBUG_OUTPUT
-    return OutImpl(std::unique_lock<std::mutex>(debug_out_mutex)).printf(fmt, std::forward<Args>(args)...);
+    OutImpl out {std::unique_lock<std::mutex>(debug_out_mutex)};
+    out.print_thread_name();
+    return out.printf(fmt, std::forward<Args>(args)...);
 #else
     return 0;
 #endif
