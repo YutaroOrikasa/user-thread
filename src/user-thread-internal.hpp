@@ -46,7 +46,8 @@ struct ThreadData {
     ThreadState state = ThreadState::before_launch;
 
 #ifdef USE_SPLITSTACKS
-    void* split_stacks_boundary = 0;
+    // void* split_stacks_boundary = 0;
+    splitstack_context splitstack_context_;
 #endif
 
 public:
@@ -56,16 +57,6 @@ public:
         , stack_frame(std::move(stack_frame)) {
 
         assert(this->stack_frame.stack.get() != 0);
-
-#ifdef USE_SPLITSTACKS
-        void* bottom = this->stack_frame.stack.get() + this->stack_frame.size;
-        split_stacks_boundary = __morestack_make_guard(bottom, stack_frame.size);
-
-        debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", this->stack_frame.stack.get(),
-                      static_cast<unsigned long>(this->stack_frame.size));
-        debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
-        assert(split_stacks_boundary < bottom);
-#endif
 
     }
 
@@ -123,17 +114,14 @@ class Worker {
 
 
 #ifdef USE_SPLITSTACKS
-    void* const split_stacks_boundary = 0;
+    splitstack_context alternative_stack_splitstack_context = {};
 #endif
 
 public:
     explicit Worker(WorkQueue work_queue, std::string worker_name = "") :
         work_queue(work_queue),
         alternative_stack(StackAllocator::allocate())
-#ifdef USE_SPLITSTACKS
-        ,
-        split_stacks_boundary(__morestack_make_guard(alternative_stack.stack.get() + alternative_stack.size, alternative_stack.size))
-#endif
+
     {
         worker_thread = std::thread([this, worker_name]() {
             do_works(worker_name);
@@ -155,14 +143,14 @@ public:
 
         this_thread->state = ThreadState::stop;
 #ifdef USE_SPLITSTACKS
-        this_thread->split_stacks_boundary = __morestack_get_guard();
+        __splitstack_getcontext(this_thread->splitstack_context_);
 #endif
 
 
         if (mysetjmp(this_thread->env)) {
 
 #ifdef USE_SPLITSTACKS
-            __morestack_set_guard(this_thread->split_stacks_boundary);
+            __splitstack_setcontext(this_thread->splitstack_context_);
 #endif
             this_thread->state = ThreadState::running;
             return;
@@ -178,14 +166,14 @@ public:
         debug::printf("thread %p created at %p!\n", &t, this_thread);
         this_thread->state = ThreadState::stop;
 #ifdef USE_SPLITSTACKS
-        this_thread->split_stacks_boundary = __morestack_get_guard();
+        __splitstack_getcontext(this_thread->splitstack_context_);
 #endif
 
 
         if (mysetjmp(this_thread->env)) {
 
 #ifdef USE_SPLITSTACKS
-            __morestack_set_guard(this_thread->split_stacks_boundary);
+            __splitstack_setcontext(this_thread->splitstack_context_);
 #endif
             this_thread->state = ThreadState::running;
 
@@ -208,9 +196,12 @@ private:
         }
 
 #ifdef USE_SPLITSTACKS
+
         void* bottom = alternative_stack.stack.get() + alternative_stack.size;
+        alternative_stack_splitstack_context[STACK_GUARD] = __morestack_make_guard(bottom, alternative_stack.size);
+        auto split_stacks_boundary = alternative_stack_splitstack_context[STACK_GUARD];
         debug::printf("stack upper boundary of alt stack: %p\n", alternative_stack.stack.get());
-        debug::printf("stack boundary of alt stack      : %p\n", split_stacks_boundary);
+        debug::printf("split stack boundary of alt stack: %p\n", split_stacks_boundary);
         debug::printf("stack bottom of alt stack        : %p\n", bottom);
         debug::out << "stack size of alt stack          : " << alternative_stack.size << std::endl;
         assert(split_stacks_boundary < bottom);
@@ -269,7 +260,7 @@ private:
     static void execute_next_thread(Worker& worker, ThreadData* next = nullptr) {
         debug::printf("execute_next_thread_impl %p\n", execute_next_thread_impl);
 #ifdef USE_SPLITSTACKS
-        __morestack_set_guard(worker.split_stacks_boundary);
+        __splitstack_setcontext(worker.alternative_stack_splitstack_context);
 #endif
         call_with_alt_stack_arg3(worker.alternative_stack, reinterpret_cast<void*>(execute_next_thread_impl), &worker, next, nullptr);
 //        __asm__("movq %0, %%rsp" : : "r") : "%rsp");
@@ -330,7 +321,7 @@ private:
             debug::printf("launch user thread!\n");
 
 #ifdef USE_SPLITSTACKS
-            __morestack_set_guard(next_thread.split_stacks_boundary);
+            __splitstack_setcontext(next_thread.splitstack_context_);
 #endif
             call_with_alt_stack_arg3(stack_frame, next_thread.stack_frame.size, reinterpret_cast<void*>(entry_thread), &next_thread, nullptr, nullptr);
 
@@ -338,7 +329,7 @@ private:
             debug::printf("resume user thread %p!\n", &next_thread);
             next_thread.state = ThreadState::running;
 #ifdef USE_SPLITSTACKS
-            __morestack_set_guard(next_thread.split_stacks_boundary);
+            __splitstack_setcontext(next_thread.splitstack_context_);
 #endif
             mylongjmp(next_thread.env);
         }
@@ -350,6 +341,19 @@ private:
 
         debug::printf("start thread in new stack frame\n");
         debug::out << std::endl;
+
+#ifdef USE_SPLITSTACKS
+        __stack_split_initialize();
+
+        void* bottom = thread_data.stack_frame.stack.get() + thread_data.stack_frame.size;
+        void* split_stacks_boundary = __morestack_get_guard();
+
+        debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", thread_data.stack_frame.stack.get(),
+                      static_cast<unsigned long>(thread_data.stack_frame.size));
+        debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
+        assert(split_stacks_boundary < bottom);
+#endif
+
         thread_data.state = ThreadState::running;
 
         thread_data.func(thread_data.arg);
