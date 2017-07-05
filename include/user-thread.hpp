@@ -99,7 +99,7 @@ public:
         for (auto i : boost::irange(0ul, workers.size())) {
             static_cast<void>(i);
             auto dummy_thread = new ThreadData(exec_thread <decltype(dummy)> , &dummy,
-                                               SimpleStackAllocator::allocate());
+                                               StackAllocator::allocate());
             debug::printf("### push dummy thread\n");
             work_queue.get_local_queue(0).push(*dummy_thread);
         }
@@ -118,7 +118,7 @@ public:
         {
             auto lk = util::make_unique_lock(mutex_for_threads);
             threads.emplace_back(func, arg,
-                                 SimpleStackAllocator::allocate());
+                                 StackAllocator::allocate());
             thread_data = &threads.back();
         }
 
