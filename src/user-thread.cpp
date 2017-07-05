@@ -69,8 +69,8 @@ void start_main_thread(void (*func)(void*), void* arg) {
     worker_manager_ptr->start_main_thread(func, arg);
 }
 
-Thread start_thread(void (*func)(void*), void* arg) {
-    return worker_manager_ptr->start_thread(func, arg);
+void start_thread(void (*func)(void*), void* arg) {
+    worker_manager_ptr->start_thread(func, arg);
 }
 
 

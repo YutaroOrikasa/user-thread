@@ -14,27 +14,10 @@
 
 namespace orks {
 namespace userthread {
-
-class Thread {
-    detail::ThreadData* thread_data;
-
-public:
-
-    explicit Thread(detail::ThreadData& td) :
-        thread_data(&td) {
-    }
-
-    bool running();
-
-};
-
 namespace detail {
 class WorkerManager {
     WorkStealQueue<ThreadData> work_queue;
     std::list<Worker> workers;
-
-    std::mutex mutex_for_threads;
-    std::list<ThreadData> threads;
 
     static unsigned int number_of_cpu_cores() {
         const auto num = std::thread::hardware_concurrency();
@@ -84,9 +67,9 @@ public:
             }
         };
 
-        threads.emplace_back(exec_thread<decltype(main0)>, &main0, StackAllocator::allocate());
-        auto& main_thread = threads.back();
-        work_queue.get_local_queue(0).push(main_thread);
+        // created ThreadData* will be deleted in Worker::entry_thread
+        auto main_thread = new ThreadData(exec_thread<decltype(main0)>, &main0, StackAllocator::allocate());
+        work_queue.get_local_queue(0).push(*main_thread);
 
         /*
          * yield() 時に無限ループに陥らないようにするためにworker数分の ダーミースレッドを用意する。
@@ -98,6 +81,7 @@ public:
          */
         for (auto i : boost::irange(0ul, workers.size())) {
             static_cast<void>(i);
+            // created ThreadData* will be deleted in Worker::entry_thread
             auto dummy_thread = new ThreadData(exec_thread <decltype(dummy)> , &dummy,
                                                StackAllocator::allocate());
             debug::printf("### push dummy thread\n");
@@ -108,23 +92,14 @@ public:
             worker.wait();
         }
 
-        // TODO
-        // dummy_thread will leak
-
     }
 
-    Thread start_thread(void (*func)(void* arg), void* arg) {
-        ThreadData* thread_data;
-        {
-            auto lk = util::make_unique_lock(mutex_for_threads);
-            threads.emplace_back(func, arg,
-                                 StackAllocator::allocate());
-            thread_data = &threads.back();
-        }
+    void start_thread(void (*func)(void* arg), void* arg) {
+
+        // created ThreadData* will be deleted in Worker::entry_thread
+        ThreadData* thread_data = new ThreadData(func, arg, StackAllocator::allocate());
 
         get_worker_of_this_native_thread().create_thread(*thread_data);
-
-        return Thread(*thread_data);
 
     }
 
@@ -150,7 +125,7 @@ using detail::WorkerManager;
 *  main thread がyield()を呼ぶと未定義動作
 */
 
-Thread start_thread(void (*func)(void* arg), void* arg);
+void start_thread(void (*func)(void* arg), void* arg);
 
 /*
 * initialize global worker manager with the number of the worker.

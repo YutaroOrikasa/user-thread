@@ -362,6 +362,9 @@ private:
         thread_data.state = ThreadState::ended;
         debug::printf("end: %p\n", &thread_data);
 
+        // delete ThreadData* created by WorkerManager::{start_main_thread, start_thread}
+        delete &thread_data;
+
         // worker can switch before and after func() called.
         auto& worker = get_worker_of_this_native_thread();
 
