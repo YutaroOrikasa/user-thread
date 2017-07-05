@@ -285,6 +285,8 @@ private:
         if (previous_thread) {
             if (previous_thread->state == ThreadState::ended) {
                 // delete previous_thread
+                // delete ThreadData* created by WorkerManager::{start_main_thread, start_thread}
+                delete previous_thread;
             } else {
                 // push after pop
                 worker_before_switch.work_queue.push(*previous_thread);
@@ -364,9 +366,6 @@ private:
         debug::printf("end thread\n");
         thread_data.state = ThreadState::ended;
         debug::printf("end: %p\n", &thread_data);
-
-        // delete ThreadData* created by WorkerManager::{start_main_thread, start_thread}
-        delete &thread_data;
 
         // worker can switch before and after func() called.
         auto& worker = get_worker_of_this_native_thread();
