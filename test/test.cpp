@@ -59,6 +59,23 @@ void main_thread_for_test_yield(void* arg) {
 
 }
 
+TEST(WorkerManager, TestWith1Worker) {
+
+    WorkerManager wm { 1 };
+    TestData args {wm};
+    wm.start_main_thread(main_thread_for_test, &args);
+    ASSERT_EQ(args.thread_size, args.counter);
+}
+
+TEST(WorkerManager, TestYieldWith1Worker) {
+
+    WorkerManager wm { 1 };
+    TestData args {wm};
+    wm.start_main_thread(main_thread_for_test_yield, &args);
+    ASSERT_EQ(args.thread_size * 2, args.counter);
+}
+
+
 TEST(WorkerManager, Test) {
 
     WorkerManager wm { 4 };
