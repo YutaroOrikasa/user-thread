@@ -7,15 +7,16 @@ using namespace orks::userthread;
 
 
 namespace {
-struct Args {
+struct TestData {
     WorkerManager& wm;
-    const int thread_size;
-    std::atomic_int& counter;
-    std::atomic_int& alive_thread_counter;
+    const int thread_size = 8;
+    std::atomic_int counter {0};
+    std::atomic_int alive_thread_counter {thread_size};
 };
+
 void child_thread_for_test(void* arg) {
     printf("child thread\n");
-    Args& args = *reinterpret_cast<Args*>(arg);
+    TestData& args = *reinterpret_cast<TestData*>(arg);
 
     ++args.counter;
 
@@ -23,7 +24,7 @@ void child_thread_for_test(void* arg) {
 }
 void main_thread_for_test(void* arg) {
     printf("main thread\n");
-    Args& args = *reinterpret_cast<Args*>(arg);
+    TestData& args = *reinterpret_cast<TestData*>(arg);
     for (int i = 0; i < args.thread_size; ++i) {
         args.wm.start_thread(child_thread_for_test, &args);
     }
@@ -34,7 +35,7 @@ void main_thread_for_test(void* arg) {
 
 void child_thread_for_test_yield(void* arg) {
     printf("child thread\n");
-    Args& args = *reinterpret_cast<Args*>(arg);
+    TestData& args = *reinterpret_cast<TestData*>(arg);
 
     ++args.counter;
     args.wm.scheduling_yield();
@@ -45,7 +46,7 @@ void child_thread_for_test_yield(void* arg) {
 }
 void main_thread_for_test_yield(void* arg) {
     printf("main thread\n");
-    Args& args = *reinterpret_cast<Args*>(arg);
+    TestData& args = *reinterpret_cast<TestData*>(arg);
     for (int i = 0; i < args.thread_size; ++i) {
         args.wm.start_thread(child_thread_for_test_yield, &args);
     }
@@ -54,29 +55,41 @@ void main_thread_for_test_yield(void* arg) {
     }
 }
 
+// void test(WorkerManager& wm, )
+
 }
+
+TEST(WorkerManager, TestWith1Worker) {
+
+    WorkerManager wm { 1 };
+    TestData args {wm};
+    wm.start_main_thread(main_thread_for_test, &args);
+    ASSERT_EQ(args.thread_size, args.counter);
+}
+
+TEST(WorkerManager, TestYieldWith1Worker) {
+
+    WorkerManager wm { 1 };
+    TestData args {wm};
+    wm.start_main_thread(main_thread_for_test_yield, &args);
+    ASSERT_EQ(args.thread_size * 2, args.counter);
+}
+
 
 TEST(WorkerManager, Test) {
 
     WorkerManager wm { 4 };
-    std::atomic_int counter { 0 };
-    int thread_size = 8;
-    std::atomic_int alive_thread_counter {thread_size};
-    Args args = { wm, thread_size, counter, alive_thread_counter };
+    TestData args {wm};
     wm.start_main_thread(main_thread_for_test, &args);
-    ASSERT_EQ(thread_size, counter);
+    ASSERT_EQ(args.thread_size, args.counter);
 }
 
 TEST(WorkerManager, TestYield) {
 
     WorkerManager wm { 4 };
-    std::atomic_int counter { 0 };
-    std::atomic_int finished_thread_counter {0};
-    int thread_size = 8;
-    std::atomic_int alive_thread_counter {thread_size};
-    Args args = { wm, thread_size, counter, alive_thread_counter };
+    TestData args {wm};
     wm.start_main_thread(main_thread_for_test_yield, &args);
-    ASSERT_EQ(thread_size * 2, counter);
+    ASSERT_EQ(args.thread_size * 2, args.counter);
 }
 
 int main(int argc, char** argv) {

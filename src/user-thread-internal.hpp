@@ -27,6 +27,8 @@ namespace orks {
 namespace userthread {
 namespace detail {
 
+using namespace stacktool;
+
 #ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
 using StackAllocator = ORKS_USERTHREAD_STACK_ALLOCATOR;
 #else
@@ -84,7 +86,7 @@ void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* f
 #endif
 
 #ifdef USE_SPLITSTACKS
-    assert(stacktool::more_forward_than(__morestack_get_guard(), stack_base));
+    assert(more_forward_than(__morestack_get_guard(), stack_base));
 #endif
     orks_private_call_with_alt_stack_arg3_impl(arg1, arg2, arg3, stack_base, func);
 }
@@ -205,8 +207,8 @@ private:
         debug::printf("split stack boundary of alt stack: %p\n", split_stacks_boundary);
         debug::printf("stack bottom of alt stack        : %p\n", bottom);
         debug::out << "stack size of alt stack          : " << alternative_stack.size << std::endl;
-        assert(stacktool::more_forward_than(split_stacks_boundary, bottom));
-        assert(stacktool::more_forward_equal(alternative_stack.stack.get(), split_stacks_boundary));
+        assert(more_forward_than(split_stacks_boundary, bottom));
+        assert(more_forward_equal(alternative_stack.stack.get(), split_stacks_boundary));
 #endif
         execute_next_thread(*this);
         // never_come_here
@@ -352,7 +354,7 @@ private:
         debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", thread_data.stack_frame.stack.get(),
                       static_cast<unsigned long>(thread_data.stack_frame.size));
         debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
-        assert(stacktool::more_forward_than(split_stacks_boundary, bottom));
+        assert(more_forward_than(split_stacks_boundary, bottom));
 #endif
 
         thread_data.state = ThreadState::running;
