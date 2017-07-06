@@ -39,6 +39,7 @@ void child_thread_for_test_yield(void* arg) {
 
     ++args.counter;
     args.wm.scheduling_yield();
+    printf("child thread resumed\n");
     ++args.counter;
 
     --args.alive_thread_counter;
@@ -51,6 +52,7 @@ void main_thread_for_test_yield(void* arg) {
         args.wm.start_thread(child_thread_for_test_yield, &args);
     }
     while (args.alive_thread_counter != 0) {
+        printf("main thread yield\n");
         args.wm.scheduling_yield();
     }
 }
