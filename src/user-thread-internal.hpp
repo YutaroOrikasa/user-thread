@@ -85,9 +85,6 @@ void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* f
     debug::printf("func %p\n", func);
 #endif
 
-#ifdef USE_SPLITSTACKS
-    assert(more_forward_than(__morestack_get_guard(), stack_base));
-#endif
     orks_private_call_with_alt_stack_arg3_impl(arg1, arg2, arg3, stack_base, func);
 }
 
@@ -326,8 +323,11 @@ private:
             debug::printf("launch user thread!\n");
 
 #ifdef USE_SPLITSTACKS
-            __splitstack_setcontext(next_thread.splitstack_context_);
+            // DO NOT restore splitstack_context here
+            // because splitstack_context_　is not initialized.
+            // __splitstack_setcontext(next_thread.splitstack_context_);
 #endif
+
             call_with_alt_stack_arg3(stack_frame, next_thread.stack_frame.size, reinterpret_cast<void*>(entry_thread), &next_thread, nullptr, nullptr);
 
         } else {
