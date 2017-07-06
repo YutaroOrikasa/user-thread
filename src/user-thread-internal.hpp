@@ -85,9 +85,6 @@ void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* f
     debug::printf("func %p\n", func);
 #endif
 
-#ifdef USE_SPLITSTACKS
-    assert(more_forward_than(__morestack_get_guard(), stack_base));
-#endif
     orks_private_call_with_alt_stack_arg3_impl(arg1, arg2, arg3, stack_base, func);
 }
 
@@ -326,8 +323,11 @@ private:
             debug::printf("launch user thread!\n");
 
 #ifdef USE_SPLITSTACKS
-            __splitstack_setcontext(next_thread.splitstack_context_);
+            // DO NOT restore splitstack_context here
+            // because splitstack_context_　is not initialized.
+            // __splitstack_setcontext(next_thread.splitstack_context_);
 #endif
+
             call_with_alt_stack_arg3(stack_frame, next_thread.stack_frame.size, reinterpret_cast<void*>(entry_thread), &next_thread, nullptr, nullptr);
 
         } else {
@@ -342,38 +342,8 @@ private:
     }
 
 
-    static void entry_thread(ThreadData& thread_data) {
-
-        debug::printf("start thread in new stack frame\n");
-        debug::out << std::endl;
-
-#ifdef USE_SPLITSTACKS
-        __stack_split_initialize();
-
-        void* bottom = thread_data.stack_frame.stack.get() + thread_data.stack_frame.size;
-        void* split_stacks_boundary = __morestack_get_guard();
-
-        debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", thread_data.stack_frame.stack.get(),
-                      static_cast<unsigned long>(thread_data.stack_frame.size));
-        debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
-        assert(more_forward_than(split_stacks_boundary, bottom));
-#endif
-
-        thread_data.state = ThreadState::running;
-
-        thread_data.func(thread_data.arg);
-
-        debug::printf("end thread\n");
-        thread_data.state = ThreadState::ended;
-        debug::printf("end: %p\n", &thread_data);
-
-        // worker can switch before and after func() called.
-        auto& worker = get_worker_of_this_native_thread();
-
-        execute_next_thread(worker);
-        // no return
-        // this thread context will be deleted by next thread
-    }
+    __attribute__((no_split_stack))
+    static void entry_thread(ThreadData& thread_data);
 
 //    void call_me_after_context_switch(ThreadData* thread_now, ThreadData* thread_jump_from) {
 //
@@ -399,6 +369,44 @@ private:
 //    }
 
 };
+
+inline
+void Worker::entry_thread(ThreadData& thread_data) {
+
+    debug::printf("start thread in new stack frame\n");
+    debug::out << std::endl;
+
+#ifdef USE_SPLITSTACKS
+    __stack_split_initialize();
+
+    void* bottom = thread_data.stack_frame.stack.get() + thread_data.stack_frame.size;
+    void* split_stacks_boundary = __morestack_get_guard();
+
+    debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", thread_data.stack_frame.stack.get(),
+                  static_cast<unsigned long>(thread_data.stack_frame.size));
+    debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
+    // DEBUG:
+    if (!more_forward_than(split_stacks_boundary, bottom)) {
+        int x = 1;
+    }
+    assert(more_forward_than(split_stacks_boundary, bottom));
+#endif
+
+    thread_data.state = ThreadState::running;
+
+    thread_data.func(thread_data.arg);
+
+    debug::printf("end thread\n");
+    thread_data.state = ThreadState::ended;
+    debug::printf("end: %p\n", &thread_data);
+
+    // worker can switch before and after func() called.
+    auto& worker = get_worker_of_this_native_thread();
+
+    execute_next_thread(worker);
+    // no return
+    // this thread context will be deleted by next thread
+}
 
 } // detail
 } // userthread
