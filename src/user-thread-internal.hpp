@@ -385,10 +385,6 @@ void Worker::entry_thread(ThreadData& thread_data) {
     debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", thread_data.stack_frame.stack.get(),
                   static_cast<unsigned long>(thread_data.stack_frame.size));
     debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
-    // DEBUG:
-    if (!more_forward_than(split_stacks_boundary, bottom)) {
-        int x = 1;
-    }
     assert(more_forward_than(split_stacks_boundary, bottom));
 #endif
 
