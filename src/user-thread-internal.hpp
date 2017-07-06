@@ -195,6 +195,27 @@ private:
 
     }
 
+    // always_inline for no split stack
+    __attribute__((always_inline))
+    static void context_switch(ThreadData& from, ThreadData& to) {
+        if (mysetjmp(from.env)) {
+            return;
+        }
+        mylongjmp(to.env);
+    }
+
+    // always_inline for no split stack
+    __attribute__((always_inline))
+    static void context_switch_new_context(ThreadData& from, ThreadData& to) {
+
+        if (mysetjmp(from.env)) {
+            return;
+        }
+        char* stack_frame = to.stack_frame.stack.get();
+        call_with_alt_stack_arg3(stack_frame, to.stack_frame.size, reinterpret_cast<void*>(entry_thread), &to, nullptr, nullptr);
+
+    }
+
     static void call_after_context_switch(ThreadData& prev) {
         Worker& worker_afrer_switch = get_worker_of_this_native_thread();
         debug::printf("worker_afrer_switch.worker_thread_data %p\n", &worker_afrer_switch.worker_thread_data);
@@ -229,17 +250,13 @@ private:
 #ifdef USE_SPLITSTACKS
         __splitstack_getcontext(current_thread->splitstack_context_);
 #endif
-        if (mysetjmp(current_thread->env)) {
-            goto jumpback;
-        }
 
         worker_before_switch.pass_on_longjmp = current_thread;
 
         if (next_thread.state == ThreadState::before_launch) {
-            char* stack_frame = next_thread.stack_frame.stack.get();
             debug::printf("launch user thread!\n");
 
-            call_with_alt_stack_arg3(stack_frame, next_thread.stack_frame.size, reinterpret_cast<void*>(entry_thread), &next_thread, nullptr, nullptr);
+            context_switch_new_context(*current_thread, next_thread);
 
         } else if (next_thread.state == ThreadState::stop) {
             debug::printf("resume user thread %p!\n", &next_thread);
@@ -247,7 +264,7 @@ private:
 #ifdef USE_SPLITSTACKS
             __splitstack_setcontext(next_thread.splitstack_context_);
 #endif
-            mylongjmp(next_thread.env);
+            context_switch(*current_thread, next_thread);
 
         } else {
             debug::out << "next_thread " << &next_thread << " invalid state: " << static_cast<int>(next_thread.state) << "\n";
@@ -256,7 +273,7 @@ private:
 
         }
 
-jumpback:
+
         Worker& worker_after_switch = get_worker_of_this_native_thread();
         assert(worker_after_switch.pass_on_longjmp != nullptr);
 
@@ -290,6 +307,9 @@ void Worker::entry_thread(ThreadData& thread_data) {
 #endif
 
     Worker& worker_before_switch = get_worker_of_this_native_thread();
+
+    // TODO: move this to switch_context_impl
+    // do this on prev context before setting new stack
     worker_before_switch.current_thread = &thread_data;
     if (worker_before_switch.pass_on_longjmp != nullptr) {
         auto& prev = *worker_before_switch.pass_on_longjmp;
