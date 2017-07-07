@@ -11,7 +11,6 @@
 #include "../src/user-thread-internal.hpp"
 
 
-
 namespace orks {
 namespace userthread {
 namespace detail {
@@ -69,6 +68,7 @@ public:
 
         // created ThreadData* will be deleted in Worker::execute_next_thread_impl
         auto main_thread = new ThreadData(exec_thread<decltype(main0)>, &main0, StackAllocator::allocate());
+        Worker::make_thread_(*main_thread);
         work_queue.get_local_queue(0).push(*main_thread);
 
         /*
@@ -84,6 +84,7 @@ public:
             // created ThreadData* will be deleted in Worker::execute_next_thread_impl
             auto dummy_thread = new ThreadData(exec_thread <decltype(dummy)> , &dummy,
                                                StackAllocator::allocate());
+            Worker::make_thread_(*dummy_thread);
             debug::printf("### push dummy thread\n");
             work_queue.get_local_queue(0).push(*dummy_thread);
         }
@@ -95,6 +96,7 @@ public:
     }
 
     void start_thread(void (*func)(void* arg), void* arg) {
+
 
         // created ThreadData* will be deleted in Worker::execute_next_thread_impl
         ThreadData* thread_data = new ThreadData(func, arg, StackAllocator::allocate());
@@ -146,15 +148,6 @@ void start_main_thread(void (*func)(void* arg), void* arg);
 
 void yield();
 
-namespace detail {
-
-template<typename Fn>
-void exec_thread(void* func_obj) {
-    (*static_cast<Fn*>(func_obj))();
-    delete static_cast<Fn*>(func_obj);
-}
-}
-
 // return: std::future<auto>
 template <typename Fn, typename... Args>
 auto create_thread(Fn fn, Args... args) {
@@ -166,7 +159,7 @@ auto create_thread(Fn fn, Args... args) {
         promise.set_value(fn(args...));
     };
     using Fn0 = decltype(fn0);
-    orks::userthread::start_thread(detail::exec_thread<Fn0>, new Fn0(std::move(fn0)));
+    orks::userthread::start_thread(detail::exec_thread_delete<Fn0>, new Fn0(std::move(fn0)));
     return future;
 }
 
