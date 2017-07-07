@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <memory>
 #include <iostream>
+#include <utility>
 
 #include <boost/range/irange.hpp>
 
@@ -26,11 +27,14 @@ namespace orks {
 namespace userthread {
 namespace detail {
 
+
 template<typename Fn>
 void exec_thread_delete(void* func_obj) {
     (*static_cast<Fn*>(func_obj))();
     delete static_cast<Fn*>(func_obj);
 }
+
+
 }
 }
 }
@@ -54,7 +58,7 @@ enum class ThreadState {
 };
 
 struct ThreadData {
-    void (*func)(void* arg);
+    ThreadData& (*func)(void* arg, ThreadData& prev);
     void* arg;
     const Stack stack_frame;
     context env;
@@ -67,7 +71,7 @@ struct ThreadData {
 #endif
 
 public:
-    ThreadData(void (*func)(void* arg), void* arg, Stack stack_frame)
+    ThreadData(ThreadData & (*func)(void* arg, ThreadData& prev), void* arg, Stack stack_frame)
         : func(func)
         , arg(arg)
         , stack_frame(std::move(stack_frame)) {
@@ -76,9 +80,24 @@ public:
 
     }
 
+    template <typename Fn>
+    ThreadData(Fn fn, Stack stack_frame)
+        : ThreadData((ThreadData & (*)(void*, ThreadData&)) & (exec_thread_delete<Fn>), (void*)(new Fn(std::move(fn))), std::move(stack_frame)) {
+//        auto a = exec_thread_delete<Fn>;
+//        int i = a;
+    }
+
     // non copyable
     ThreadData(const ThreadData&) = delete;
     ThreadData(ThreadData&&) = delete;
+
+
+    template<typename Fn>
+    static ThreadData& exec_thread_delete(void* func_obj, ThreadData& t) {
+        ThreadData& r = (*static_cast<Fn*>(func_obj))(t);
+        delete static_cast<Fn*>(func_obj);
+        return r;
+    }
 
 };
 
@@ -138,10 +157,11 @@ struct BadDesignContextTraits {
         __splitstack_getcontext(current_thread->splitstack_context_);
 #endif
 
+        ThreadData* previous_thread = 0;
         if (next_thread.state == ThreadState::before_launch) {
             debug::printf("launch user thread!\n");
 
-            context_switch_new_context(*current_thread, next_thread);
+            previous_thread = &context_switch_new_context(*current_thread, next_thread);
 
         } else if (next_thread.state == ThreadState::stop) {
             debug::printf("resume user thread %p!\n", &next_thread);
@@ -149,7 +169,7 @@ struct BadDesignContextTraits {
 #ifdef USE_SPLITSTACKS
             __splitstack_setcontext(next_thread.splitstack_context_);
 #endif
-            context_switch(*current_thread, next_thread);
+            previous_thread = &context_switch(*current_thread, next_thread);
 
         } else {
             debug::out << "next_thread " << &next_thread << " invalid state: " << static_cast<int>(next_thread.state) << "\n";
@@ -157,12 +177,6 @@ struct BadDesignContextTraits {
             assert(NEVER_COME_HERE);
 
         }
-
-        auto& current_thread_ = *current_thread;
-        assert(current_thread_.pass_on_longjmp != nullptr);
-
-        ThreadData* previous_thread = current_thread_.pass_on_longjmp;
-        current_thread_.pass_on_longjmp = nullptr;
 
         set_current_thread(*current_thread);
 
@@ -192,9 +206,9 @@ private:
 
     // always_inline for no split stack
     __attribute__((always_inline))
-    static ThreadData* context_switch(ThreadData& from, ThreadData& to) {
+    static ThreadData& context_switch(ThreadData& from, ThreadData& to) {
         if (mysetjmp(from.env)) {
-            return from.pass_on_longjmp;
+            return *from.pass_on_longjmp;
         }
         to.pass_on_longjmp = &from;
         mylongjmp(to.env);
@@ -203,10 +217,10 @@ private:
 
     // always_inline for no split stack
     __attribute__((always_inline))
-    static ThreadData* context_switch_new_context(ThreadData& from, ThreadData& new_ctx) {
+    static ThreadData& context_switch_new_context(ThreadData& from, ThreadData& new_ctx) {
 
         if (mysetjmp(from.env)) {
-            return from.pass_on_longjmp;
+            return *from.pass_on_longjmp;
         }
         new_ctx.pass_on_longjmp = &from;
         char* stack_frame = new_ctx.stack_frame.stack.get();
@@ -248,14 +262,13 @@ void BadDesignContextTraits<Worker>::entry_thread(ThreadData& thread_data) {
 
     thread_data.state = ThreadState::running;
 
-    thread_data.func(thread_data.arg);
+    ThreadData& next = thread_data.func(thread_data.arg, *thread_data.pass_on_longjmp);
 
     debug::printf("end thread\n");
     thread_data.state = ThreadState::ended;
     debug::printf("end: %p\n", &thread_data);
 
-    assert(thread_data.pass_on_longjmp != nullptr);
-    switch_context(*thread_data.pass_on_longjmp);
+    switch_context(next);
     // no return
     // this thread context will be deleted by next thread
 }
@@ -308,22 +321,14 @@ public:
 
     void create_thread(ThreadData& t) {
 
-        make_thread_(t);
-
         debug::printf("create thread %p\n", &t);
         switch_thread_to(t);
 
     }
 
-    static void make_thread_(ThreadData& t) {
-
-        auto func = t.func;
-        auto arg = t.arg;
-        auto func_ = [&t, func, arg]() mutable {
-            if (t.pass_on_longjmp != nullptr) {
-                auto& prev = *t.pass_on_longjmp;
-                call_after_context_switch(prev);
-            }
+    static ThreadData* make_thread(void (*func)(void* arg), void* arg, Stack stack_frame) {
+        auto func_ = [func, arg](ThreadData & prev) -> ThreadData& {
+            call_after_context_switch(prev);
             func(arg);
             debug::printf("fini\n");
             auto& worker = get_worker_of_this_native_thread();
@@ -332,15 +337,12 @@ public:
                 debug::printf("will jump back to worker context\n");
                 p_next = &worker.worker_thread_data;
             }
-            t.pass_on_longjmp = p_next;
+            return *p_next;
         };
-        t.func = exec_thread_delete<decltype(func_)>;
-        t.arg = new decltype(func_)(func_);
-
-        debug::printf("make thread %p\n", &t);
-        return;
-
+        return new ThreadData(func_, std::move(stack_frame));
     }
+
+
 
 private:
     void do_works(std::string worker_name) {

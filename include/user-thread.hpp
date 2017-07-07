@@ -67,8 +67,7 @@ public:
         };
 
         // created ThreadData* will be deleted in Worker::execute_next_thread_impl
-        auto main_thread = new ThreadData(exec_thread<decltype(main0)>, &main0, StackAllocator::allocate());
-        Worker::make_thread_(*main_thread);
+        auto main_thread = Worker::make_thread(exec_thread<decltype(main0)>, &main0, StackAllocator::allocate());
         work_queue.get_local_queue(0).push(*main_thread);
 
         /*
@@ -82,9 +81,8 @@ public:
         for (auto i : boost::irange(0ul, workers.size())) {
             static_cast<void>(i);
             // created ThreadData* will be deleted in Worker::execute_next_thread_impl
-            auto dummy_thread = new ThreadData(exec_thread <decltype(dummy)> , &dummy,
-                                               StackAllocator::allocate());
-            Worker::make_thread_(*dummy_thread);
+            auto dummy_thread = Worker::make_thread(exec_thread <decltype(dummy)> , &dummy,
+                                                    StackAllocator::allocate());
             debug::printf("### push dummy thread\n");
             work_queue.get_local_queue(0).push(*dummy_thread);
         }
@@ -99,7 +97,7 @@ public:
 
 
         // created ThreadData* will be deleted in Worker::execute_next_thread_impl
-        ThreadData* thread_data = new ThreadData(func, arg, StackAllocator::allocate());
+        ThreadData* thread_data = Worker::make_thread(func, arg, StackAllocator::allocate());
 
         get_worker_of_this_native_thread().create_thread(*thread_data);
 
