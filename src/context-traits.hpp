@@ -49,7 +49,7 @@ void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* f
 
 
 enum class ThreadState {
-    running, ended, before_launch, stop
+    running, ended, before_launch
 };
 
 class ThreadData {
@@ -134,9 +134,6 @@ struct BadDesignContextTraitsImpl {
             current_thread->state = ThreadState::running;
         }
 
-        if (current_thread->state != ThreadState::ended) {
-            current_thread->state = ThreadState::stop;
-        }
         debug::printf("current thread %p, ended: %d\n", current_thread, current_thread->state == ThreadState::ended);
         debug::printf("execute thread %p, stack frame is %p\n", &next_thread, next_thread.stack_frame.stack.get());
 
@@ -150,9 +147,8 @@ struct BadDesignContextTraitsImpl {
 
             previous_thread = &context_switch_new_context(*current_thread, next_thread);
 
-        } else if (next_thread.state == ThreadState::stop) {
+        } else if (next_thread.state == ThreadState::running) {
             debug::printf("resume user thread %p!\n", &next_thread);
-            next_thread.state = ThreadState::running;
 #ifdef USE_SPLITSTACKS
             __splitstack_setcontext(next_thread.splitstack_context_);
 #endif
