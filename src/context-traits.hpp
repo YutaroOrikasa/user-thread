@@ -117,7 +117,6 @@ public:
 template<class Worker>
 struct BadDesignContextTraitsImpl {
     using Context = ThreadData*;
-    using Context_ = ThreadData;
     friend Worker;
 //    static Context& switch_context_(Context& next) {
 //
@@ -129,6 +128,11 @@ struct BadDesignContextTraitsImpl {
 //
 //    }
 
+    template <typename Fn>
+    static Context make_context(Fn fn) {
+        return new ThreadData(std::move(fn));
+    }
+
     static Context switch_context(Context next_thread) {
         return &switch_context_impl(*next_thread);
     }
@@ -136,6 +140,7 @@ struct BadDesignContextTraitsImpl {
     static bool is_finished(Context ctx) {
         return ctx->state == ThreadState::ended;
     }
+
     static void destroy_context(Context ctx) {
         delete ctx;
     }
@@ -184,12 +189,12 @@ private:
 
     }
 
-//    static Context& make_context() {
-//
-//    }
-
     static void set_current_thread(ThreadData& t) {
-        Worker::get_worker_of_this_native_thread().current_thread = &t;
+        set_current_thread(&t);
+    }
+
+    static void set_current_thread(ThreadData* t) {
+        Worker::get_worker_of_this_native_thread().current_thread = t;
     }
 
     static ThreadData* get_current_thread() {

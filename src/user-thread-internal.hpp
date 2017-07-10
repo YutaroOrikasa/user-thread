@@ -42,7 +42,6 @@ void register_worker_of_this_native_thread(Worker& worker, std::string worker_na
 Worker& get_worker_of_this_native_thread();
 
 using Context = BadDesignContextTraits::Context;
-using Context_ = BadDesignContextTraits::Context_;
 /*
  * main thread でworker を 1つ 作成すると、新しい native thread が1つ作成される。
  * このクラスの使用者は必ずwait()を呼ぶこと。
@@ -52,7 +51,7 @@ class Worker {
     using WorkQueue = WorkStealQueue<Context>::WorkQueue;
 
     using ContextTraits = BadDesignContextTraits;
-    friend void ContextTraits::set_current_thread(Context_& t);
+    friend void ContextTraits::set_current_thread(Context t);
     friend Context ContextTraits::get_current_thread();
 
     WorkQueue work_queue;
@@ -107,7 +106,7 @@ public:
             }
             return p_next.get();
         };
-        return new Context_(func_);
+        return BadDesignContextTraits::make_context(func_);
     }
 
 
