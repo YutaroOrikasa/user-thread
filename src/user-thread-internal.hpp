@@ -130,7 +130,7 @@ void call_with_alt_stack_arg3(Stack& altstack, void* func, void* arg1, void* arg
 }
 
 template <class Worker>
-struct BadDesignContextTraits {
+struct BadDesignContextTraitsImpl {
     using Context = ThreadData;
     friend Worker;
 //    static Context& switch_context_(Context& next) {
@@ -236,7 +236,7 @@ private:
 
 
 template <class Worker>
-void BadDesignContextTraits<Worker>::entry_thread(ThreadData& thread_data) {
+void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
 
 #ifdef USE_SPLITSTACKS
     __stack_split_initialize();
@@ -273,6 +273,7 @@ void BadDesignContextTraits<Worker>::entry_thread(ThreadData& thread_data) {
     // this thread context will be deleted by next thread
 }
 
+using BadDesignContextTraits = BadDesignContextTraitsImpl<Worker>;
 
 /*
  * main thread でworker を 1つ 作成すると、新しい native thread が1つ作成される。
@@ -292,7 +293,7 @@ class Worker {
 
     ThreadData* pass_on_longjmp = 0;
 
-    using ContextTraits = BadDesignContextTraits<Worker>;
+    using ContextTraits = BadDesignContextTraits;
     friend void ContextTraits::set_current_thread(ThreadData& t);
     friend ThreadData* ContextTraits::get_current_thread();
 public:
