@@ -20,14 +20,6 @@ namespace detail {
 
 class Worker;
 
-}
-}
-}
-
-namespace orks {
-namespace userthread {
-namespace detail {
-
 using namespace stacktool;
 
 #ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
@@ -60,6 +52,14 @@ void call_with_alt_stack_arg3(Stack& altstack, void* func, void* arg1, void* arg
     call_with_alt_stack_arg3(altstack.stack.get(), altstack.size, func, arg1, arg2, arg3);
 }
 
+}
+}
+}
+
+namespace orks {
+namespace userthread {
+namespace detail {
+namespace baddesign {
 
 enum class ThreadState {
     running, ended, before_launch, stop
@@ -109,9 +109,7 @@ public:
 
 };
 
-
-
-template <class Worker>
+template<class Worker>
 struct BadDesignContextTraitsImpl {
     using Context = ThreadData;
     friend Worker;
@@ -154,7 +152,8 @@ struct BadDesignContextTraitsImpl {
             previous_thread = &context_switch(*current_thread, next_thread);
 
         } else {
-            debug::out << "next_thread " << &next_thread << " invalid state: " << static_cast<int>(next_thread.state) << "\n";
+            debug::out << "next_thread " << &next_thread << " invalid state: " << static_cast<int>(next_thread.state)
+                       << "\n";
             const auto NEVER_COME_HERE = false;
             assert(NEVER_COME_HERE);
 
@@ -185,7 +184,6 @@ private:
     }
 
 
-
     // always_inline for no split stack
     __attribute__((always_inline))
     static ThreadData& context_switch(ThreadData& from, ThreadData& to) {
@@ -206,7 +204,8 @@ private:
         }
         new_ctx.pass_on_longjmp = &from;
         char* stack_frame = new_ctx.stack_frame.stack.get();
-        call_with_alt_stack_arg3(stack_frame, new_ctx.stack_frame.size, reinterpret_cast<void*>(entry_thread), &new_ctx, nullptr, nullptr);
+        call_with_alt_stack_arg3(stack_frame, new_ctx.stack_frame.size, reinterpret_cast<void*>(entry_thread),
+                                 &new_ctx, nullptr, nullptr);
 
     }
 
@@ -216,8 +215,7 @@ private:
 };
 
 
-
-template <class Worker>
+template<class Worker>
 void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
 
 #ifdef USE_SPLITSTACKS
@@ -255,11 +253,19 @@ void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
     // this thread context will be deleted by next thread
 }
 
-using BadDesignContextTraits = BadDesignContextTraitsImpl<Worker>;
-
 
 }
 }
 }
+}
 
+namespace orks {
+namespace userthread {
+namespace detail {
+
+using BadDesignContextTraits = baddesign::BadDesignContextTraitsImpl<Worker>;
+
+}
+}
+}
 #endif //USER_THREAD_CONTEXTTRAITS_HPP
