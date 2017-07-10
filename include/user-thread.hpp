@@ -15,7 +15,7 @@ namespace orks {
 namespace userthread {
 namespace detail {
 class WorkerManager {
-    WorkStealQueue<ThreadData> work_queue;
+    WorkStealQueue<ThreadData*> work_queue;
     std::list<Worker> workers;
 
     static unsigned int number_of_cpu_cores() {
@@ -68,7 +68,7 @@ public:
 
         // created ThreadData* will be deleted in Worker::execute_next_thread_impl
         auto main_thread = Worker::make_thread(exec_thread<decltype(main0)>, &main0);
-        work_queue.get_local_queue(0).push(*main_thread);
+        work_queue.get_local_queue(0).push(main_thread);
 
         /*
          * yield() 時に無限ループに陥らないようにするためにworker数分の ダーミースレッドを用意する。
@@ -83,7 +83,7 @@ public:
             // created ThreadData* will be deleted in Worker::execute_next_thread_impl
             auto dummy_thread = Worker::make_thread(exec_thread <decltype(dummy)> , &dummy);
             debug::printf("### push dummy thread\n");
-            work_queue.get_local_queue(0).push(*dummy_thread);
+            work_queue.get_local_queue(0).push(dummy_thread);
         }
 
         for (auto& worker : workers) {

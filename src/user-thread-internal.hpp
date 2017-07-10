@@ -49,7 +49,7 @@ using ThreadData = BadDesignContextTraits::Context;
  * でないとterminateする。
  */
 class Worker {
-    using WorkQueue = WorkStealQueue<ThreadData>::WorkQueue;
+    using WorkQueue = WorkStealQueue<ThreadData*>::WorkQueue;
 
     using ContextTraits = BadDesignContextTraits;
     friend void ContextTraits::set_current_thread(ThreadData& t);
@@ -98,12 +98,14 @@ public:
             func(arg);
             debug::printf("fini\n");
             auto& worker = get_worker_of_this_native_thread();
-            ThreadData* p_next = worker.work_queue.pop();
+            auto p_next = worker.work_queue.pop();
             if (!p_next) {
                 debug::printf("will jump back to worker context\n");
-                p_next = worker.worker_thread_context;
+                // remove volatile by copy
+                auto tmp = worker.worker_thread_context;
+                p_next = tmp;
             }
-            return *p_next;
+            return *p_next.get();
         };
         return new ThreadData(func_);
     }
@@ -130,15 +132,17 @@ private:
 
 
     void switch_thread(WorkQueue& work_queue) {
-        ThreadData* p_next = work_queue.pop();
+        auto p_next = work_queue.pop();
         if (!p_next) {
             debug::printf("will jump back to worker context\n");
             if (worker_thread_context == nullptr) {
                 return;
             }
-            p_next = worker_thread_context;
+            // remove volatile by copy
+            auto tmp = worker_thread_context;
+            p_next = tmp;
         }
-        switch_thread_to(*p_next);
+        switch_thread_to(*p_next.get());
     }
 
     void switch_thread_to(ThreadData& next) {
@@ -176,7 +180,7 @@ private:
         } else {
             debug::printf("push prev ThreadData* %p\n", &prev);
             debug::out << "prev ThreadData::state: " << static_cast<int>(prev.state) << "\n";
-            worker.work_queue.push(prev);
+            worker.work_queue.push(&prev);
         }
     }
 
