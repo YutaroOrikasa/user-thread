@@ -52,6 +52,9 @@ enum class ThreadState {
     running, ended, before_launch
 };
 
+class ThreadData;
+using Context = ThreadData*;
+
 class ThreadData {
 
 #ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
@@ -63,7 +66,7 @@ class ThreadData {
     using Stack = StackAllocator::Stack;
 
 public:
-    ThreadData& (*func)(void* arg, ThreadData& prev);
+    Context(*func)(void* arg, Context prev);
     void* arg;
     const Stack stack_frame;
     context env;
@@ -79,13 +82,13 @@ public:
 
     template <typename Fn>
     ThreadData(Fn fn)
-        : ThreadData((ThreadData & (*)(void*, ThreadData&)) & (exec_thread_delete<Fn>),
+        : ThreadData((Context(*)(void*, Context)) & (exec_thread_delete<Fn>),
                      (void*)(new Fn(std::move(fn)))) {
 //        auto a = exec_thread_delete<Fn>;
 //        int i = a;
     }
 
-    ThreadData(ThreadData & (*func)(void* arg, ThreadData& prev), void* arg)
+    ThreadData(Context(*func)(void* arg, Context prev), void* arg)
         : func(func)
         , arg(arg)
         , stack_frame(StackAllocator::allocate()) {
@@ -102,8 +105,8 @@ public:
 
 
     template<typename Fn>
-    static ThreadData& exec_thread_delete(void* func_obj, ThreadData& t) {
-        ThreadData& r = (*static_cast<Fn*>(func_obj))(t);
+    static Context exec_thread_delete(void* func_obj, Context t) {
+        Context r = (*static_cast<Fn*>(func_obj))(t);
         delete static_cast<Fn*>(func_obj);
         return r;
     }
@@ -113,7 +116,8 @@ public:
 
 template<class Worker>
 struct BadDesignContextTraitsImpl {
-    using Context = ThreadData;
+    using Context = ThreadData*;
+    using Context_ = ThreadData;
     friend Worker;
 //    static Context& switch_context_(Context& next) {
 //
@@ -125,7 +129,19 @@ struct BadDesignContextTraitsImpl {
 //
 //    }
 
-    static Context& switch_context(Context& next_thread) {
+    static Context switch_context(Context next_thread) {
+        return &switch_context_impl(*next_thread);
+    }
+
+    static bool is_finished(Context ctx) {
+        return ctx->state == ThreadState::ended;
+    }
+    static void destroy_context(Context ctx) {
+        delete ctx;
+    }
+
+private:
+    static ThreadData& switch_context_impl(ThreadData& next_thread) {
 
         ThreadData* volatile current_thread = get_current_thread();
 
@@ -171,15 +187,6 @@ struct BadDesignContextTraitsImpl {
 //    static Context& make_context() {
 //
 //    }
-
-    static bool is_finished(Context& ctx) {
-        return ctx.state == ThreadState::ended;
-    }
-    static void destroy_context(Context& ctx) {
-        delete &ctx;
-    }
-
-private:
 
     static void set_current_thread(ThreadData& t) {
         Worker::get_worker_of_this_native_thread().current_thread = &t;
@@ -259,7 +266,7 @@ void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
 
     thread_data.state = ThreadState::running;
 
-    ThreadData& next = thread_data.func(thread_data.arg, *thread_data.pass_on_longjmp);
+    Context next = thread_data.func(thread_data.arg, thread_data.pass_on_longjmp);
 
     debug::printf("end thread\n");
     thread_data.state = ThreadState::ended;

@@ -98,7 +98,7 @@ public:
         // created Context* will be deleted in Worker::execute_next_thread_impl
         Context thread_data = Worker::make_thread(func, arg);
 
-        get_worker_of_this_native_thread().create_thread(*thread_data);
+        get_worker_of_this_native_thread().create_thread(thread_data);
 
     }
 
