@@ -15,7 +15,7 @@ namespace orks {
 namespace userthread {
 namespace detail {
 class WorkerManager {
-    WorkStealQueue<Context*> work_queue;
+    WorkStealQueue<Context> work_queue;
     std::list<Worker> workers;
 
     static unsigned int number_of_cpu_cores() {
@@ -96,7 +96,7 @@ public:
 
 
         // created Context* will be deleted in Worker::execute_next_thread_impl
-        Context* thread_data = Worker::make_thread(func, arg);
+        Context thread_data = Worker::make_thread(func, arg);
 
         get_worker_of_this_native_thread().create_thread(*thread_data);
 
