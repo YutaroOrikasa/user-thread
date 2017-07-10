@@ -61,8 +61,6 @@ class Worker {
 
     std::thread worker_thread;
 
-    Context pass_on_longjmp = 0;
-
 public:
     explicit Worker(WorkQueue work_queue, std::string worker_name = "") :
         work_queue(work_queue) {
