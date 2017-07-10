@@ -23,11 +23,6 @@ class Worker;
 using namespace stacktool;
 
 
-
-enum class ThreadState {
-    running, ended, before_launch, stop
-};
-
 }
 }
 }
@@ -52,6 +47,10 @@ void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* f
     orks_private_call_with_alt_stack_arg3_impl(arg1, arg2, arg3, stack_base, func);
 }
 
+
+enum class ThreadState {
+    running, ended, before_launch, stop
+};
 
 class ThreadData {
 
@@ -129,7 +128,12 @@ struct BadDesignContextTraitsImpl {
     static Context& switch_context(Context& next_thread) {
 
         ThreadData* volatile current_thread = get_current_thread();
-        assert(current_thread != nullptr);
+
+        if (current_thread == nullptr) {
+            current_thread = new ThreadData(nullptr, nullptr);
+            current_thread->state = ThreadState::running;
+        }
+
         if (current_thread->state != ThreadState::ended) {
             current_thread->state = ThreadState::stop;
         }
@@ -172,6 +176,13 @@ struct BadDesignContextTraitsImpl {
 //
 //    }
 
+    static bool is_finished(Context& ctx) {
+        return ctx.state == ThreadState::ended;
+    }
+    static void destroy_context(Context& ctx) {
+        delete &ctx;
+    }
+
 private:
 
     static void set_current_thread(ThreadData& t) {
@@ -181,7 +192,7 @@ private:
     static ThreadData* get_current_thread() {
         auto t = Worker::get_worker_of_this_native_thread().current_thread;
         if (t == nullptr) {
-            return &Worker::get_worker_of_this_native_thread().worker_thread_data;
+            return Worker::get_worker_of_this_native_thread().worker_thread_context;
         }
         return t;
     }

@@ -50,26 +50,23 @@ using ThreadData = BadDesignContextTraits::Context;
  */
 class Worker {
     using WorkQueue = WorkStealQueue<ThreadData>::WorkQueue;
+
+    using ContextTraits = BadDesignContextTraits;
+    friend void ContextTraits::set_current_thread(ThreadData& t);
+    friend ThreadData* ContextTraits::get_current_thread();
+
     WorkQueue work_queue;
 
-
-    ThreadData worker_thread_data;
-    context& worker_thread_context = worker_thread_data.env;
     ThreadData* volatile current_thread = nullptr;
+    ContextTraits::Context* volatile worker_thread_context = nullptr;
 
     std::thread worker_thread;
 
     ThreadData* pass_on_longjmp = 0;
 
-    using ContextTraits = BadDesignContextTraits;
-    friend void ContextTraits::set_current_thread(ThreadData& t);
-    friend ThreadData* ContextTraits::get_current_thread();
 public:
     explicit Worker(WorkQueue work_queue, std::string worker_name = "") :
-        work_queue(work_queue),
-        worker_thread_data(nullptr, nullptr)
-
-    {
+        work_queue(work_queue) {
         worker_thread = std::thread([this, worker_name]() {
             do_works(worker_name);
         });
@@ -104,7 +101,7 @@ public:
             ThreadData* p_next = worker.work_queue.pop();
             if (!p_next) {
                 debug::printf("will jump back to worker context\n");
-                p_next = &worker.worker_thread_data;
+                p_next = worker.worker_thread_context;
             }
             return *p_next;
         };
@@ -122,9 +119,7 @@ private:
         register_worker_of_this_native_thread(*this, worker_name);
 
         debug::printf("worker is wake up! this: %p\n", this);
-        debug::printf("worker_thread_data %p\n", &worker_thread_data);
-
-        worker_thread_data.state = ThreadState::running;
+        debug::printf("worker_thread_context %p\n", worker_thread_context);
 
         schedule_thread();
 
@@ -138,7 +133,10 @@ private:
         ThreadData* p_next = work_queue.pop();
         if (!p_next) {
             debug::printf("will jump back to worker context\n");
-            p_next = &worker_thread_data;
+            if (worker_thread_context == nullptr) {
+                return;
+            }
+            p_next = worker_thread_context;
         }
         switch_thread_to(*p_next);
     }
@@ -164,20 +162,21 @@ private:
     }
 
     static void call_after_context_switch(ThreadData& prev) {
-        Worker& worker_afrer_switch = Worker::get_worker_of_this_native_thread();
-        debug::printf("worker_afrer_switch.worker_thread_data %p\n", &worker_afrer_switch.worker_thread_data);
-        if (&prev == &worker_afrer_switch.worker_thread_data) {
-            debug::out << "prev ThreadData is worker_thread_data\n";
+        Worker& worker = Worker::get_worker_of_this_native_thread();
+        debug::printf("worker.worker_thread_context %p\n", worker.worker_thread_context);
+        if (worker.worker_thread_context == nullptr) {
+            debug::out << "prev ThreadData is worker_thread_context\n";
+            worker.worker_thread_context = &prev;
             return;
         }
 
-        if (prev.state == ThreadState::ended) {
+        if (ContextTraits::is_finished(prev)) {
             debug::printf("delete prev ThreadData* %p\n", &prev);
-            delete &prev;
+            ContextTraits ::destroy_context(prev);
         } else {
             debug::printf("push prev ThreadData* %p\n", &prev);
             debug::out << "prev ThreadData::state: " << static_cast<int>(prev.state) << "\n";
-            worker_afrer_switch.work_queue.push(prev);
+            worker.work_queue.push(prev);
         }
     }
 
