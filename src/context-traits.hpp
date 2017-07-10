@@ -117,7 +117,7 @@ struct BadDesignContextTraitsImpl {
     friend Worker;
 //    static Context& switch_context_(Context& next) {
 //
-//        debug::printf("jump to ThreadData* %p\n", &next);
+//        debug::printf("jump to Context* %p\n", &next);
 //        auto& prev = switch_context_impl(next);
 //
 //        call_after_context_switch(prev);
