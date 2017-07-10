@@ -207,6 +207,10 @@ private:
         to.pass_on_longjmp = &from;
         mylongjmp(to.env);
 
+        const auto NEVER_COME_HERE = false;
+        assert(NEVER_COME_HERE);
+
+
     }
 
     // always_inline for no split stack
@@ -220,6 +224,9 @@ private:
         char* stack_frame = new_ctx.stack_frame.stack.get();
         call_with_alt_stack_arg3(stack_frame, new_ctx.stack_frame.size, reinterpret_cast<void*>(entry_thread),
                                  &new_ctx, nullptr, nullptr);
+
+        const auto NEVER_COME_HERE = false;
+        assert(NEVER_COME_HERE);
 
     }
 
