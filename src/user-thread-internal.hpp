@@ -67,7 +67,7 @@ class Worker {
 public:
     explicit Worker(WorkQueue work_queue, std::string worker_name = "") :
         work_queue(work_queue),
-        worker_thread_data(nullptr, nullptr, StackAllocator::allocate())
+        worker_thread_data(nullptr, nullptr)
 
     {
         worker_thread = std::thread([this, worker_name]() {
@@ -95,7 +95,7 @@ public:
 
     }
 
-    static ThreadData* make_thread(void (*func)(void* arg), void* arg, Stack stack_frame) {
+    static ThreadData* make_thread(void (*func)(void* arg), void* arg) {
         auto func_ = [func, arg](ThreadData & prev) -> ThreadData& {
             call_after_context_switch(prev);
             func(arg);
@@ -108,7 +108,7 @@ public:
             }
             return *p_next;
         };
-        return new ThreadData(func_, std::move(stack_frame));
+        return new ThreadData(func_);
     }
 
 

@@ -22,12 +22,20 @@ class Worker;
 
 using namespace stacktool;
 
-#ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
-using StackAllocator = ORKS_USERTHREAD_STACK_ALLOCATOR;
-#else
-using StackAllocator = SimpleStackAllocator;
-#endif
-using Stack = StackAllocator::Stack;
+
+
+enum class ThreadState {
+    running, ended, before_launch, stop
+};
+
+}
+}
+}
+
+namespace orks {
+namespace userthread {
+namespace detail {
+namespace baddesign {
 
 inline
 void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* func, void* arg1, void* arg2, void* arg3) __attribute__((no_split_stack));
@@ -44,28 +52,18 @@ void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* f
     orks_private_call_with_alt_stack_arg3_impl(arg1, arg2, arg3, stack_base, func);
 }
 
-inline
-void call_with_alt_stack_arg3(Stack& altstack, void* func, void* arg1, void* arg2, void* arg3) __attribute__((no_split_stack));
 
-inline
-void call_with_alt_stack_arg3(Stack& altstack, void* func, void* arg1, void* arg2, void* arg3) {
-    call_with_alt_stack_arg3(altstack.stack.get(), altstack.size, func, arg1, arg2, arg3);
-}
+class ThreadData {
 
-}
-}
-}
+#ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
+    using StackAllocator = ORKS_USERTHREAD_STACK_ALLOCATOR;
+#else
+    using StackAllocator = SimpleStackAllocator;
+#endif
 
-namespace orks {
-namespace userthread {
-namespace detail {
-namespace baddesign {
+    using Stack = StackAllocator::Stack;
 
-enum class ThreadState {
-    running, ended, before_launch, stop
-};
-
-struct ThreadData {
+public:
     ThreadData& (*func)(void* arg, ThreadData& prev);
     void* arg;
     const Stack stack_frame;
@@ -79,21 +77,25 @@ struct ThreadData {
 #endif
 
 public:
-    ThreadData(ThreadData & (*func)(void* arg, ThreadData& prev), void* arg, Stack stack_frame)
+
+    template <typename Fn>
+    ThreadData(Fn fn)
+        : ThreadData((ThreadData & (*)(void*, ThreadData&)) & (exec_thread_delete<Fn>),
+                     (void*)(new Fn(std::move(fn)))) {
+//        auto a = exec_thread_delete<Fn>;
+//        int i = a;
+    }
+
+    ThreadData(ThreadData & (*func)(void* arg, ThreadData& prev), void* arg)
         : func(func)
         , arg(arg)
-        , stack_frame(std::move(stack_frame)) {
+        , stack_frame(StackAllocator::allocate()) {
 
         assert(this->stack_frame.stack.get() != 0);
 
     }
 
-    template <typename Fn>
-    ThreadData(Fn fn, Stack stack_frame)
-        : ThreadData((ThreadData & (*)(void*, ThreadData&)) & (exec_thread_delete<Fn>), (void*)(new Fn(std::move(fn))), std::move(stack_frame)) {
-//        auto a = exec_thread_delete<Fn>;
-//        int i = a;
-    }
+
 
     // non copyable
     ThreadData(const ThreadData&) = delete;
@@ -106,6 +108,7 @@ public:
         delete static_cast<Fn*>(func_obj);
         return r;
     }
+
 
 };
 
