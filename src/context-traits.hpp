@@ -68,7 +68,7 @@ class ThreadData {
 public:
     Context(*func)(void* arg, Context prev);
     void* arg;
-    const Stack stack_frame;
+    Stack stack_frame;
     context env;
     ThreadState state = ThreadState::before_launch;
 
@@ -91,9 +91,7 @@ public:
     ThreadData(Context(*func)(void* arg, Context prev), void* arg)
         : func(func)
         , arg(arg)
-        , stack_frame(StackAllocator::allocate()) {
-
-        assert(this->stack_frame.stack.get() != 0);
+        , stack_frame() {
 
     }
 
@@ -104,6 +102,27 @@ public:
     ThreadData(ThreadData&&) = delete;
 
 
+    // this function is public
+    // this is bad
+    template <typename Fn>
+    static ThreadData* create(Fn fn) {
+        Stack stack = StackAllocator::allocate();
+        assert(stack.size != 0);
+        auto th = new(stack.stack.get()) ThreadData(fn);
+        th->stack_frame = std::move(stack);
+        assert(th->stack_frame.size != 0);
+        return th;
+
+    }
+
+    // this function is public
+    // this is bad
+    static void destroy(ThreadData& t) {
+        Stack stack = std::move(t.stack_frame);
+        t.~ThreadData();
+    }
+
+private:
     template<typename Fn>
     static Context exec_thread_delete(void* func_obj, Context t) {
         Context r = (*static_cast<Fn*>(func_obj))(t);
@@ -130,7 +149,7 @@ struct BadDesignContextTraitsImpl {
 
     template <typename Fn>
     static Context make_context(Fn fn) {
-        return new ThreadData(std::move(fn));
+        return ThreadData::create(std::move(fn));
     }
 
     static Context switch_context(Context next_thread) {
@@ -142,7 +161,7 @@ struct BadDesignContextTraitsImpl {
     }
 
     static void destroy_context(Context ctx) {
-        delete ctx;
+        ThreadData::destroy((*ctx));
     }
 
 private:
@@ -229,6 +248,8 @@ private:
             return *from.pass_on_longjmp;
         }
         new_ctx.pass_on_longjmp = &from;
+        assert(new_ctx.stack_frame.stack.get() != 0);
+        assert(new_ctx.stack_frame.size != 0);
         char* stack_frame = new_ctx.stack_frame.stack.get();
         call_with_alt_stack_arg3(stack_frame, new_ctx.stack_frame.size, reinterpret_cast<void*>(entry_thread),
                                  &new_ctx, nullptr, nullptr);
