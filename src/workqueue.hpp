@@ -76,7 +76,7 @@ public:
         }
 
         void push(T t) {
-            debug::printf("WorkQueue::push %p\n", &t);
+            debug::printf("WorkQueue::push %p\n", t);
             queue.push(t);
         }
 

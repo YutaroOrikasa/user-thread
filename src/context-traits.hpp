@@ -165,21 +165,25 @@ struct BadDesignContextTraitsImpl {
     }
 
 private:
-    static ThreadData& switch_context_impl(ThreadData& next_thread) {
+    static ThreadData& switch_context_impl(ThreadData& next_thread, ThreadData* finished_thread = nullptr) {
 
-        ThreadData* volatile current_thread = get_current_thread();
+        ThreadData current_thread_ {nullptr, nullptr};
+        ThreadData* current_thread;
 
-        if (current_thread == nullptr) {
-            current_thread = new ThreadData(nullptr, nullptr);
+        if (finished_thread == nullptr) {
+            current_thread = &current_thread_;
+            debug::printf("save current thread at %p\n", current_thread);
+
             current_thread->state = ThreadState::running;
-        }
-
-        debug::printf("current thread %p, ended: %d\n", current_thread, current_thread->state == ThreadState::ended);
-        debug::printf("execute thread %p, stack frame is %p\n", &next_thread, next_thread.stack_frame.stack.get());
 
 #ifdef USE_SPLITSTACKS
-        __splitstack_getcontext(current_thread->splitstack_context_);
+            __splitstack_getcontext(current_thread->splitstack_context_);
 #endif
+        } else {
+            current_thread = finished_thread;
+            debug::printf("current thread %p is finished\n", current_thread);
+        }
+
 
         ThreadData* previous_thread = 0;
         if (next_thread.state == ThreadState::before_launch) {
@@ -202,26 +206,8 @@ private:
 
         }
 
-        set_current_thread(*current_thread);
-
         return *previous_thread;
 
-    }
-
-    static void set_current_thread(ThreadData& t) {
-        set_current_thread(&t);
-    }
-
-    static void set_current_thread(ThreadData* t) {
-        Worker::get_worker_of_this_native_thread().current_thread = t;
-    }
-
-    static ThreadData* get_current_thread() {
-        auto t = Worker::get_worker_of_this_native_thread().current_thread;
-        if (t == nullptr) {
-            return Worker::get_worker_of_this_native_thread().worker_thread_context;
-        }
-        return t;
     }
 
 
@@ -280,12 +266,6 @@ void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
     assert(more_forward_than(split_stacks_boundary, bottom));
 #endif
 
-
-    // TODO: move this to switch_context_impl
-    // do this on prev context before setting new stack
-    set_current_thread(thread_data);
-
-
     debug::printf("start thread in new stack frame\n");
     debug::out << std::endl;
 
@@ -298,7 +278,7 @@ void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
     thread_data.state = ThreadState::ended;
     debug::printf("end: %p\n", &thread_data);
 
-    switch_context(next);
+    switch_context_impl(*next, &thread_data);
     // no return
     // this thread context will be deleted by next thread
 }

@@ -51,12 +51,9 @@ class Worker {
     using WorkQueue = WorkStealQueue<Context>::WorkQueue;
 
     using ContextTraits = BadDesignContextTraits;
-    friend void ContextTraits::set_current_thread(Context t);
-    friend Context ContextTraits::get_current_thread();
 
     WorkQueue work_queue;
 
-    Context volatile current_thread = nullptr;
     Context volatile worker_thread_context = nullptr;
 
     std::thread worker_thread;
@@ -102,6 +99,7 @@ public:
                 auto tmp = worker.worker_thread_context;
                 p_next = tmp;
             }
+            debug::printf("next thread is at %p\n", p_next.get());
             return p_next.get();
         };
         return BadDesignContextTraits::make_context(func_);
