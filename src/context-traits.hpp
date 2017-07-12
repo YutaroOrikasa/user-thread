@@ -118,6 +118,9 @@ public:
     // this function is public
     // this is bad
     static void destroy(ThreadData& t) {
+#ifdef USE_SPLITSTACKS
+        __splitstack_releasecontext(t.splitstack_context_);
+#endif
         Stack stack = std::move(t.stack_frame);
         t.~ThreadData();
     }
