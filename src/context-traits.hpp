@@ -137,9 +137,9 @@ template<class Worker>
 struct BadDesignContextTraitsImpl {
     using Context = ThreadData*;
     friend Worker;
-//    static Context& switch_context_(Context& next) {
+//    static Work& switch_context_(Work& next) {
 //
-//        debug::printf("jump to Context* %p\n", &next);
+//        debug::printf("jump to Work* %p\n", &next);
 //        auto& prev = switch_context_impl(next);
 //
 //        call_after_context_switch(prev);

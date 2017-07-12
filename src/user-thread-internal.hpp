@@ -41,20 +41,20 @@ class Worker;
 void register_worker_of_this_native_thread(Worker& worker, std::string worker_name = "");
 Worker& get_worker_of_this_native_thread();
 
-using Context = BadDesignContextTraits::Context;
+using Work = BadDesignContextTraits::Context;
 /*
  * main thread でworker を 1つ 作成すると、新しい native thread が1つ作成される。
  * このクラスの使用者は必ずwait()を呼ぶこと。
  * でないとterminateする。
  */
 class Worker {
-    using WorkQueue = WorkStealQueue<Context>::WorkQueue;
+    using WorkQueue = WorkStealQueue<Work>::WorkQueue;
 
     using ContextTraits = BadDesignContextTraits;
 
     WorkQueue work_queue;
 
-    Context volatile worker_thread_context = nullptr;
+    Work volatile worker_thread_context = nullptr;
 
     std::thread worker_thread;
 
@@ -79,15 +79,15 @@ public:
         switch_thread(work_queue);
     }
 
-    void create_thread(Context t) {
+    void create_thread(Work t) {
 
         debug::printf("create thread %p\n", &t);
         switch_thread_to(t);
 
     }
 
-    static Context make_thread(void (*func)(void* arg), void* arg) {
-        auto func_ = [func, arg](Context prev) -> Context {
+    static Work make_thread(void (*func)(void* arg), void* arg) {
+        auto func_ = [func, arg](Work prev) -> Work {
             call_after_context_switch(prev);
             func(arg);
             debug::printf("fini\n");
@@ -140,16 +140,16 @@ private:
         switch_thread_to(p_next.get());
     }
 
-    void switch_thread_to(Context next) {
+    void switch_thread_to(Work next) {
 
-        debug::printf("jump to Context %p\n", &next);
+        debug::printf("jump to Work %p\n", &next);
         auto prev = switch_context(next);
 
         call_after_context_switch(prev);
 
     }
 
-    Context switch_context(Context to) {
+    Work switch_context(Work to) {
 //        auto this_thread = current_thread;
 //        this_thread->state = ThreadState::stop;
 //        assert(this_thread != nullptr);
@@ -160,21 +160,21 @@ private:
         return ContextTraits::switch_context(to);
     }
 
-    static void call_after_context_switch(Context prev) {
+    static void call_after_context_switch(Work prev) {
         Worker& worker = Worker::get_worker_of_this_native_thread();
         debug::printf("worker.worker_thread_context %p\n", worker.worker_thread_context);
         if (worker.worker_thread_context == nullptr) {
-            debug::out << "prev Context is worker_thread_context\n";
+            debug::out << "prev Work is worker_thread_context\n";
             worker.worker_thread_context = prev;
             return;
         }
 
         if (ContextTraits::is_finished(prev)) {
-            debug::printf("delete prev Context %p\n", &prev);
+            debug::printf("delete prev Work %p\n", &prev);
             ContextTraits::destroy_context(prev);
         } else {
-            debug::printf("push prev Context %p\n", &prev);
-            debug::out << "prev Context::state: " << static_cast<int>(prev->state) << "\n";
+            debug::printf("push prev Work %p\n", &prev);
+            debug::out << "prev Work::state: " << static_cast<int>(prev->state) << "\n";
             worker.work_queue.push(prev);
         }
     }

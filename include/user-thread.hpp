@@ -15,7 +15,7 @@ namespace orks {
 namespace userthread {
 namespace detail {
 class WorkerManager {
-    WorkStealQueue<Context> work_queue;
+    WorkStealQueue<Work> work_queue;
     std::list<Worker> workers;
 
     static unsigned int number_of_cpu_cores() {
@@ -66,7 +66,7 @@ public:
             }
         };
 
-        // created Context* will be deleted in Worker::execute_next_thread_impl
+        // created Work* will be deleted in Worker::execute_next_thread_impl
         auto main_thread = Worker::make_thread(exec_thread<decltype(main0)>, &main0);
         work_queue.get_local_queue(0).push(main_thread);
 
@@ -80,7 +80,7 @@ public:
          */
         for (auto i : boost::irange(0ul, workers.size())) {
             static_cast<void>(i);
-            // created Context* will be deleted in Worker::execute_next_thread_impl
+            // created Work* will be deleted in Worker::execute_next_thread_impl
             auto dummy_thread = Worker::make_thread(exec_thread <decltype(dummy)> , &dummy);
             debug::printf("### push dummy thread\n");
             work_queue.get_local_queue(0).push(dummy_thread);
@@ -95,8 +95,8 @@ public:
     void start_thread(void (*func)(void* arg), void* arg) {
 
 
-        // created Context* will be deleted in Worker::execute_next_thread_impl
-        Context thread_data = Worker::make_thread(func, arg);
+        // created Work* will be deleted in Worker::execute_next_thread_impl
+        Work thread_data = Worker::make_thread(func, arg);
 
         get_worker_of_this_native_thread().create_thread(thread_data);
 
