@@ -73,6 +73,7 @@ public:
     ThreadState state = ThreadState::before_launch;
 
     ThreadData* pass_on_longjmp = 0;
+    void* transferred_data = nullptr;
 
 #ifdef USE_SPLITSTACKS
     splitstack_context splitstack_context_;
@@ -139,24 +140,14 @@ private:
 template<class Worker>
 struct BadDesignContextTraitsImpl {
     using Context = ThreadData*;
-    friend Worker;
-//    static Work& switch_context_(Work& next) {
-//
-//        debug::printf("jump to Work* %p\n", &next);
-//        auto& prev = switch_context_impl(next);
-//
-//        call_after_context_switch(prev);
-//        return prev;
-//
-//    }
 
     template <typename Fn>
     static Context make_context(Fn fn) {
         return ThreadData::create(std::move(fn));
     }
 
-    static Context switch_context(Context next_thread) {
-        return &switch_context_impl(*next_thread);
+    static Context switch_context(Context next_thread, void* transfer_data = nullptr) {
+        return &switch_context_impl(*next_thread, transfer_data);
     }
 
     static bool is_finished(Context ctx) {
@@ -167,8 +158,14 @@ struct BadDesignContextTraitsImpl {
         ThreadData::destroy((*ctx));
     }
 
+    void* get_transferred_data(Context ctx) {
+        return ctx->transferred_data;
+    }
+
 private:
-    static ThreadData& switch_context_impl(ThreadData& next_thread, ThreadData* finished_thread = nullptr) {
+    static ThreadData& switch_context_impl(ThreadData& next_thread,
+                                           void* transfer_data = nullptr,
+                                           ThreadData* finished_thread = nullptr) {
 
         ThreadData current_thread_ {nullptr, nullptr};
         ThreadData* current_thread;
@@ -186,6 +183,7 @@ private:
 
 
         ThreadData* previous_thread = 0;
+        next_thread.transferred_data = transfer_data;
         if (next_thread.state == ThreadState::before_launch) {
             debug::printf("launch user thread!\n");
 
@@ -289,7 +287,7 @@ void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
     thread_data.state = ThreadState::ended;
     debug::printf("end: %p\n", &thread_data);
 
-    switch_context_impl(*next, &thread_data);
+    switch_context_impl(*next, thread_data.transferred_data, &thread_data);
     // no return
     // this thread context will be deleted by next thread
 }
