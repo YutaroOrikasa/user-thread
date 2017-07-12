@@ -176,9 +176,6 @@ private:
 
             current_thread->state = ThreadState::running;
 
-#ifdef USE_SPLITSTACKS
-            __splitstack_getcontext(current_thread->splitstack_context_);
-#endif
         } else {
             current_thread = finished_thread;
             debug::printf("current thread %p is finished\n", current_thread);
@@ -193,9 +190,7 @@ private:
 
         } else if (next_thread.state == ThreadState::running) {
             debug::printf("resume user thread %p!\n", &next_thread);
-#ifdef USE_SPLITSTACKS
-            __splitstack_setcontext(next_thread.splitstack_context_);
-#endif
+
             previous_thread = &context_switch(*current_thread, next_thread);
 
         } else {
@@ -214,7 +209,14 @@ private:
     // always_inline for no split stack
     __attribute__((always_inline))
     static ThreadData& context_switch(ThreadData& from, ThreadData& to) {
+
+#ifdef USE_SPLITSTACKS
+        __splitstack_getcontext(from.splitstack_context_);
+#endif
         if (mysetjmp(from.env)) {
+#ifdef USE_SPLITSTACKS
+            __splitstack_setcontext(from.splitstack_context_);
+#endif
             return *from.pass_on_longjmp;
         }
         to.pass_on_longjmp = &from;
@@ -230,7 +232,13 @@ private:
     __attribute__((always_inline))
     static ThreadData& context_switch_new_context(ThreadData& from, ThreadData& new_ctx) {
 
+#ifdef USE_SPLITSTACKS
+        __splitstack_getcontext(from.splitstack_context_);
+#endif
         if (mysetjmp(from.env)) {
+#ifdef USE_SPLITSTACKS
+            __splitstack_setcontext(from.splitstack_context_);
+#endif
             return *from.pass_on_longjmp;
         }
         new_ctx.pass_on_longjmp = &from;
