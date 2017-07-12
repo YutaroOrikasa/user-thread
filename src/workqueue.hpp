@@ -2,6 +2,7 @@
 #define USER_THREAD_WORKQUEUE_HPP
 
 #include <deque>
+#include <boost/optional.hpp>
 
 #include "util.hpp"
 
@@ -56,31 +57,33 @@ public:
 template<typename T,
          template<typename U> class ThreadSafeDeque = ThreadSafeQueue>
 class WorkStealQueue {
-    std::vector<ThreadSafeDeque<T*>> work_queues;
+    std::vector<ThreadSafeDeque<T>> work_queues;
     std::atomic_bool closed = { false };
 
 
 public:
 
     class WorkQueue {
-        ThreadSafeDeque<T*>& queue;
+        ThreadSafeDeque<T>& queue;
         WorkStealQueue& wsq;
         int queue_num;
 
     public:
-        explicit WorkQueue(ThreadSafeDeque<T*>& q, WorkStealQueue& wsq,
+        explicit WorkQueue(ThreadSafeDeque<T>& q, WorkStealQueue& wsq,
                            int queue_num) :
             queue(q), wsq(wsq), queue_num(queue_num) {
 
         }
-        void push(T& t) {
-            debug::printf("WorkQueue::push %p\n", &t);
-            queue.push(&t);
+
+        void push(T t) {
+            debug::printf("WorkQueue::push %p\n", t);
+            queue.push(t);
         }
 
-        T* pop() {
 
-            T* t;
+        boost::optional<T> pop() {
+
+            T t;
             if (queue.pop(t)) {
                 debug::printf("WorkQueue::pop %p\n", t);
                 return t;
@@ -117,19 +120,19 @@ public:
      * return false if no works left
      * return true if else
      */
-    T* steal() {
+    boost::optional<T> steal() {
 
         for (;;) { //for (auto i : boost::irange(0, 100)) {
             debug::printf("WorkQueue::steal loop\n");
             if (closed) {
                 debug::printf("WorkQueue::steal closed\n");
-                return nullptr;
+                return boost::none;
             }
 
 
             for (int i : boost::irange(0, static_cast<int>(work_queues.size()))) {
                 auto& queue = work_queues[i];
-                T* t;
+                T t;
                 if (queue.pop_front(t)) {
                     debug::printf("WorkQueue::steal %p\n", t);
                     return t;

@@ -11,12 +11,11 @@
 #include "../src/user-thread-internal.hpp"
 
 
-
 namespace orks {
 namespace userthread {
 namespace detail {
 class WorkerManager {
-    WorkStealQueue<ThreadData> work_queue;
+    WorkStealQueue<Work> work_queue;
     std::list<Worker> workers;
 
     static unsigned int number_of_cpu_cores() {
@@ -67,9 +66,9 @@ public:
             }
         };
 
-        // created ThreadData* will be deleted in Worker::execute_next_thread_impl
-        auto main_thread = new ThreadData(exec_thread<decltype(main0)>, &main0, StackAllocator::allocate());
-        work_queue.get_local_queue(0).push(*main_thread);
+        // created Work* will be deleted in Worker::execute_next_thread_impl
+        auto main_thread = Worker::make_thread(exec_thread<decltype(main0)>, &main0);
+        work_queue.get_local_queue(0).push(main_thread);
 
         /*
          * yield() 時に無限ループに陥らないようにするためにworker数分の ダーミースレッドを用意する。
@@ -81,11 +80,10 @@ public:
          */
         for (auto i : boost::irange(0ul, workers.size())) {
             static_cast<void>(i);
-            // created ThreadData* will be deleted in Worker::execute_next_thread_impl
-            auto dummy_thread = new ThreadData(exec_thread <decltype(dummy)> , &dummy,
-                                               StackAllocator::allocate());
+            // created Work* will be deleted in Worker::execute_next_thread_impl
+            auto dummy_thread = Worker::make_thread(exec_thread <decltype(dummy)> , &dummy);
             debug::printf("### push dummy thread\n");
-            work_queue.get_local_queue(0).push(*dummy_thread);
+            work_queue.get_local_queue(0).push(dummy_thread);
         }
 
         for (auto& worker : workers) {
@@ -96,10 +94,11 @@ public:
 
     void start_thread(void (*func)(void* arg), void* arg) {
 
-        // created ThreadData* will be deleted in Worker::execute_next_thread_impl
-        ThreadData* thread_data = new ThreadData(func, arg, StackAllocator::allocate());
 
-        get_worker_of_this_native_thread().create_thread(*thread_data);
+        // created Work* will be deleted in Worker::execute_next_thread_impl
+        Work thread_data = Worker::make_thread(func, arg);
+
+        get_worker_of_this_native_thread().create_thread(thread_data);
 
     }
 
@@ -146,15 +145,6 @@ void start_main_thread(void (*func)(void* arg), void* arg);
 
 void yield();
 
-namespace detail {
-
-template<typename Fn>
-void exec_thread(void* func_obj) {
-    (*static_cast<Fn*>(func_obj))();
-    delete static_cast<Fn*>(func_obj);
-}
-}
-
 // return: std::future<auto>
 template <typename Fn, typename... Args>
 auto create_thread(Fn fn, Args... args) {
@@ -166,7 +156,7 @@ auto create_thread(Fn fn, Args... args) {
         promise.set_value(fn(args...));
     };
     using Fn0 = decltype(fn0);
-    orks::userthread::start_thread(detail::exec_thread<Fn0>, new Fn0(std::move(fn0)));
+    orks::userthread::start_thread(detail::exec_thread_delete<Fn0>, new Fn0(std::move(fn0)));
     return future;
 }
 

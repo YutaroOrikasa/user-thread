@@ -14,6 +14,11 @@ struct TestData {
     std::atomic_int alive_thread_counter {thread_size};
 };
 
+void main_thread_for_test_main_thread(void* arg) {
+    printf("main thread\n");
+    (*static_cast<std::atomic_int*>(arg)) = 1;
+}
+
 void child_thread_for_test(void* arg) {
     printf("child thread\n");
     TestData& args = *reinterpret_cast<TestData*>(arg);
@@ -39,6 +44,7 @@ void child_thread_for_test_yield(void* arg) {
 
     ++args.counter;
     args.wm.scheduling_yield();
+    printf("child thread resumed\n");
     ++args.counter;
 
     --args.alive_thread_counter;
@@ -51,12 +57,29 @@ void main_thread_for_test_yield(void* arg) {
         args.wm.start_thread(child_thread_for_test_yield, &args);
     }
     while (args.alive_thread_counter != 0) {
+        printf("main thread yield\n");
         args.wm.scheduling_yield();
     }
 }
 
 // void test(WorkerManager& wm, )
 
+}
+
+TEST(WorkerManager, TestMainThreadWith1Worker) {
+
+    WorkerManager wm { 1 };
+    std::atomic_int i {0};
+    wm.start_main_thread(main_thread_for_test_main_thread, &i);
+    ASSERT_EQ(i, 1);
+}
+
+TEST(WorkerManager, TestMainThread) {
+
+    WorkerManager wm { 4 };
+    std::atomic_int i {0};
+    wm.start_main_thread(main_thread_for_test_main_thread, &i);
+    ASSERT_EQ(i, 1);
 }
 
 TEST(WorkerManager, TestWith1Worker) {
