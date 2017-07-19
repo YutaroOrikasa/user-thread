@@ -68,12 +68,14 @@ class ThreadData {
 public:
     Context(*func)(void* arg, Context prev);
     void* arg;
-    Stack stack_frame;
     context env;
     ThreadState state = ThreadState::before_launch;
 
     ThreadData* pass_on_longjmp = 0;
     void* transferred_data = nullptr;
+
+private:
+    Stack stack_frame;
 
 #ifdef USE_SPLITSTACKS
     splitstack_context splitstack_context_;
@@ -118,14 +120,22 @@ public:
 #ifdef USE_SPLITSTACKS
         __stack_split_initialize();
 
-        void* bottom = stack_frame.stack.get() + stack_frame.size;
+        void* bottom = get_stack() + get_stack_size();
         void* split_stacks_boundary = __morestack_get_guard();
 
-        debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", stack_frame.stack.get(),
-                      static_cast<unsigned long>(stack_frame.size));
+        debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", get_stack(),
+                      static_cast<unsigned long>(get_stack_size()));
         debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
         assert(more_forward_than(split_stacks_boundary, bottom));
 #endif
+    }
+
+    char* get_stack() {
+        return stack_frame.stack.get();
+    }
+
+    std::size_t get_stack_size() {
+        return stack_frame.size;
     }
 
 
@@ -142,7 +152,7 @@ public:
         assert(stack.size != 0);
         auto th = new(stack.stack.get()) ThreadData(fn);
         th->stack_frame = std::move(stack);
-        assert(th->stack_frame.size != 0);
+        assert(th->get_stack_size() != 0);
         return th;
 
     }
@@ -272,10 +282,10 @@ private:
             return *from.pass_on_longjmp;
         }
         new_ctx.pass_on_longjmp = &from;
-        assert(new_ctx.stack_frame.stack.get() != 0);
-        assert(new_ctx.stack_frame.size != 0);
-        char* stack_frame = new_ctx.stack_frame.stack.get();
-        call_with_alt_stack_arg3(stack_frame, new_ctx.stack_frame.size, reinterpret_cast<void*>(entry_thread),
+        assert(new_ctx.get_stack() != 0);
+        assert(new_ctx.get_stack_size() != 0);
+        char* stack_frame = new_ctx.get_stack();
+        call_with_alt_stack_arg3(stack_frame, new_ctx.get_stack_size(), reinterpret_cast<void*>(entry_thread),
                                  &new_ctx, nullptr, nullptr);
 
         const auto NEVER_COME_HERE = false;
