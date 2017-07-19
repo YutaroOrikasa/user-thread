@@ -164,14 +164,10 @@ private:
 namespace splitstack {
 class ThreadData {
     using Context = ThreadData*;
+    struct SplitstackContext {
+        splitstack_context ctx;
+    };
 
-#ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
-    using StackAllocator = ORKS_USERTHREAD_STACK_ALLOCATOR;
-#else
-    using StackAllocator = SimpleStackAllocator;
-#endif
-
-    using Stack = StackAllocator::Stack;
 
 public:
     context env;
@@ -183,9 +179,10 @@ public:
 private:
     Context(*func)(void* arg, Context prev);
     void* arg;
-    Stack stack_frame;
 
-    splitstack_context splitstack_context_;
+    SplitstackContext splitstack_context_;
+    void* stack = nullptr;
+    std::size_t stack_size = 0;
 
 public:
 
@@ -198,8 +195,7 @@ public:
 
     ThreadData(Context(*func)(void* arg, Context prev), void* arg)
         : func(func)
-        , arg(arg)
-        , stack_frame() {
+        , arg(arg) {
 
     }
 
@@ -210,13 +206,13 @@ public:
     // always_inline for no split stack
     __attribute__((always_inline))
     void restore_extra_context() {
-        __splitstack_setcontext(splitstack_context_);
+        __splitstack_setcontext(splitstack_context_.ctx);
     }
 
     // always_inline for no split stack
     __attribute__((always_inline))
     void save_extra_context() {
-        __splitstack_getcontext(splitstack_context_);
+        __splitstack_getcontext(splitstack_context_.ctx);
     }
 
     // always_inline for no split stack
@@ -234,11 +230,11 @@ public:
     }
 
     char* get_stack() {
-        return stack_frame.stack.get();
+        return static_cast<char*>(stack);
     }
 
     std::size_t get_stack_size() {
-        return stack_frame.size;
+        return stack_size;
     }
 
 
@@ -251,10 +247,14 @@ public:
     // this is bad
     template <typename Fn>
     static ThreadData* create(Fn fn) {
-        Stack stack = StackAllocator::allocate();
-        assert(stack.size != 0);
-        auto th = new(stack.stack.get()) ThreadData(fn);
-        th->stack_frame = std::move(stack);
+        SplitstackContext ssctx;
+        std::size_t size;
+        void* stack = __splitstack_makecontext(SimpleStackAllocator::stack_size, ssctx.ctx, &size);
+        assert(size != 0);
+        auto th = new(stack) ThreadData(fn);
+        th->splitstack_context_ = ssctx;
+        th->stack = stack;
+        th->stack_size = size;
         assert(th->get_stack_size() != 0);
         return th;
 
@@ -263,9 +263,10 @@ public:
     // this function is public
     // this is bad
     static void destroy(ThreadData& t) {
-        __splitstack_releasecontext(t.splitstack_context_);
-        Stack stack = std::move(t.stack_frame);
+        SplitstackContext ssctx = t.splitstack_context_;
         t.~ThreadData();
+        __splitstack_releasecontext(ssctx.ctx);
+
     }
 
 private:
