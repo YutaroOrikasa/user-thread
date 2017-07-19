@@ -96,6 +96,37 @@ public:
 
     }
 
+    // always_inline for no split stack
+    __attribute__((always_inline))
+    void restore_extra_context() {
+#ifdef USE_SPLITSTACKS
+        __splitstack_setcontext(splitstack_context_);
+#endif
+    }
+
+    // always_inline for no split stack
+    __attribute__((always_inline))
+    void save_extra_context() {
+#ifdef USE_SPLITSTACKS
+        __splitstack_getcontext(splitstack_context_);
+#endif
+    }
+
+    // always_inline for no split stack
+    __attribute__((always_inline))
+    void initialize_extra_context_at_entry_point() {
+#ifdef USE_SPLITSTACKS
+        __stack_split_initialize();
+
+        void* bottom = stack_frame.stack.get() + stack_frame.size;
+        void* split_stacks_boundary = __morestack_get_guard();
+
+        debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", stack_frame.stack.get(),
+                      static_cast<unsigned long>(stack_frame.size));
+        debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
+        assert(more_forward_than(split_stacks_boundary, bottom));
+#endif
+    }
 
 
     // non copyable
@@ -211,13 +242,12 @@ private:
     __attribute__((always_inline))
     static ThreadData& context_switch(ThreadData& from, ThreadData& to) {
 
-#ifdef USE_SPLITSTACKS
-        __splitstack_getcontext(from.splitstack_context_);
-#endif
+        from.save_extra_context();
+
         if (mysetjmp(from.env)) {
-#ifdef USE_SPLITSTACKS
-            __splitstack_setcontext(from.splitstack_context_);
-#endif
+
+            from.restore_extra_context();
+
             return *from.pass_on_longjmp;
         }
         to.pass_on_longjmp = &from;
@@ -233,13 +263,12 @@ private:
     __attribute__((always_inline))
     static ThreadData& context_switch_new_context(ThreadData& from, ThreadData& new_ctx) {
 
-#ifdef USE_SPLITSTACKS
-        __splitstack_getcontext(from.splitstack_context_);
-#endif
+        from.save_extra_context();
+
         if (mysetjmp(from.env)) {
-#ifdef USE_SPLITSTACKS
-            __splitstack_setcontext(from.splitstack_context_);
-#endif
+
+            from.restore_extra_context();
+
             return *from.pass_on_longjmp;
         }
         new_ctx.pass_on_longjmp = &from;
@@ -254,6 +283,7 @@ private:
 
     }
 
+
     __attribute__((no_split_stack))
     static void entry_thread(ThreadData& thread_data);
 
@@ -263,17 +293,7 @@ private:
 template<class Worker>
 void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
 
-#ifdef USE_SPLITSTACKS
-    __stack_split_initialize();
-
-    void* bottom = thread_data.stack_frame.stack.get() + thread_data.stack_frame.size;
-    void* split_stacks_boundary = __morestack_get_guard();
-
-    debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", thread_data.stack_frame.stack.get(),
-                  static_cast<unsigned long>(thread_data.stack_frame.size));
-    debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
-    assert(more_forward_than(split_stacks_boundary, bottom));
-#endif
+    thread_data.initialize_extra_context_at_entry_point();
 
     debug::printf("start thread in new stack frame\n");
     debug::out << std::endl;
