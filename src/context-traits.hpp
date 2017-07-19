@@ -3,7 +3,6 @@
 
 #include "mysetjmp.h"
 #include "user-thread-debug.hpp"
-#include "workqueue.hpp"
 #include "splitstackapi.h"
 #include "stack-address-tools.hpp"
 #include "thread-data/thread-data.hpp"
@@ -13,17 +12,6 @@
 #include "config.h"
 
 
-namespace orks {
-namespace userthread {
-namespace detail {
-
-class Worker;
-
-
-
-}
-}
-}
 
 namespace orks {
 namespace userthread {
@@ -46,10 +34,7 @@ void call_with_alt_stack_arg3(char* altstack, std::size_t altstack_size, void* f
 }
 
 
-
-
-template<class Worker>
-struct BadDesignContextTraitsImpl {
+struct BadDesignContextTraits {
 #ifdef USE_SPLITSTACKS
     using ThreadData = splitstack::ThreadData;
 #endif
@@ -172,9 +157,8 @@ private:
 
 };
 
-
-template<class Worker>
-void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
+inline
+void BadDesignContextTraits::entry_thread(ThreadData& thread_data) {
 
     thread_data.initialize_extra_context_at_entry_point();
 
@@ -205,7 +189,7 @@ namespace orks {
 namespace userthread {
 namespace detail {
 
-using BadDesignContextTraits = baddesign::BadDesignContextTraitsImpl<Worker>;
+using BadDesignContextTraits = baddesign::BadDesignContextTraits;
 
 }
 }

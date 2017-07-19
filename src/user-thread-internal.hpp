@@ -13,6 +13,8 @@
 
 #include "stack-address-tools.hpp"
 #include "context-traits.hpp"
+#include "workqueue.hpp"
+
 
 namespace orks {
 namespace userthread {
