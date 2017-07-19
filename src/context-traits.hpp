@@ -66,8 +66,6 @@ class ThreadData {
     using Stack = StackAllocator::Stack;
 
 public:
-    Context(*func)(void* arg, Context prev);
-    void* arg;
     context env;
     ThreadState state = ThreadState::before_launch;
 
@@ -75,6 +73,8 @@ public:
     void* transferred_data = nullptr;
 
 private:
+    Context(*func)(void* arg, Context prev);
+    void* arg;
     Stack stack_frame;
 
 #ifdef USE_SPLITSTACKS
@@ -96,6 +96,10 @@ public:
         , arg(arg)
         , stack_frame() {
 
+    }
+
+    Context call_func(Context prev) {
+        return func(arg, prev);
     }
 
     // always_inline for no split stack
@@ -311,7 +315,7 @@ void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
 
     thread_data.state = ThreadState::running;
 
-    Context next = thread_data.func(thread_data.arg, thread_data.pass_on_longjmp);
+    Context next = thread_data.call_func(thread_data.pass_on_longjmp);
 
     debug::printf("end thread\n");
     thread_data.state = ThreadState::ended;
