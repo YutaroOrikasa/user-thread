@@ -53,9 +53,9 @@ enum class ThreadState {
 };
 
 class ThreadData;
-using Context = ThreadData*;
 
 class ThreadData {
+    using Context = ThreadData*;
 
 #ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
     using StackAllocator = ORKS_USERTHREAD_STACK_ALLOCATOR;
@@ -66,14 +66,16 @@ class ThreadData {
     using Stack = StackAllocator::Stack;
 
 public:
-    Context(*func)(void* arg, Context prev);
-    void* arg;
-    Stack stack_frame;
     context env;
     ThreadState state = ThreadState::before_launch;
 
     ThreadData* pass_on_longjmp = 0;
     void* transferred_data = nullptr;
+
+private:
+    Context(*func)(void* arg, Context prev);
+    void* arg;
+    Stack stack_frame;
 
 #ifdef USE_SPLITSTACKS
     splitstack_context splitstack_context_;
@@ -85,8 +87,7 @@ public:
     ThreadData(Fn fn)
         : ThreadData((Context(*)(void*, Context)) & (exec_thread_delete<Fn>),
                      (void*)(new Fn(std::move(fn)))) {
-//        auto a = exec_thread_delete<Fn>;
-//        int i = a;
+
     }
 
     ThreadData(Context(*func)(void* arg, Context prev), void* arg)
@@ -96,6 +97,31 @@ public:
 
     }
 
+    Context call_func(Context prev) {
+        return func(arg, prev);
+    }
+
+    void restore_extra_context() {
+
+    }
+
+
+    void save_extra_context() {
+
+    }
+
+
+    void initialize_extra_context_at_entry_point() {
+
+    }
+
+    char* get_stack() {
+        return stack_frame.stack.get();
+    }
+
+    std::size_t get_stack_size() {
+        return stack_frame.size;
+    }
 
 
     // non copyable
@@ -111,7 +137,7 @@ public:
         assert(stack.size != 0);
         auto th = new(stack.stack.get()) ThreadData(fn);
         th->stack_frame = std::move(stack);
-        assert(th->stack_frame.size != 0);
+        assert(th->get_stack_size() != 0);
         return th;
 
     }
@@ -119,9 +145,7 @@ public:
     // this function is public
     // this is bad
     static void destroy(ThreadData& t) {
-#ifdef USE_SPLITSTACKS
-        __splitstack_releasecontext(t.splitstack_context_);
-#endif
+
         Stack stack = std::move(t.stack_frame);
         t.~ThreadData();
     }
@@ -137,8 +161,130 @@ private:
 
 };
 
+namespace splitstack {
+class ThreadData {
+    using Context = ThreadData*;
+
+#ifdef ORKS_USERTHREAD_STACK_ALLOCATOR
+    using StackAllocator = ORKS_USERTHREAD_STACK_ALLOCATOR;
+#else
+    using StackAllocator = SimpleStackAllocator;
+#endif
+
+    using Stack = StackAllocator::Stack;
+
+public:
+    context env;
+    ThreadState state = ThreadState::before_launch;
+
+    ThreadData* pass_on_longjmp = 0;
+    void* transferred_data = nullptr;
+
+private:
+    Context(*func)(void* arg, Context prev);
+    void* arg;
+    Stack stack_frame;
+
+    splitstack_context splitstack_context_;
+
+public:
+
+    template <typename Fn>
+    ThreadData(Fn fn)
+        : ThreadData((Context(*)(void*, Context)) & (exec_thread_delete<Fn>),
+                     (void*)(new Fn(std::move(fn)))) {
+
+    }
+
+    ThreadData(Context(*func)(void* arg, Context prev), void* arg)
+        : func(func)
+        , arg(arg)
+        , stack_frame() {
+
+    }
+
+    Context call_func(Context prev) {
+        return func(arg, prev);
+    }
+
+    // always_inline for no split stack
+    __attribute__((always_inline))
+    void restore_extra_context() {
+        __splitstack_setcontext(splitstack_context_);
+    }
+
+    // always_inline for no split stack
+    __attribute__((always_inline))
+    void save_extra_context() {
+        __splitstack_getcontext(splitstack_context_);
+    }
+
+    // always_inline for no split stack
+    __attribute__((always_inline))
+    void initialize_extra_context_at_entry_point() {
+        __stack_split_initialize();
+
+        void* bottom = get_stack() + get_stack_size();
+        void* split_stacks_boundary = __morestack_get_guard();
+
+        debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", get_stack(),
+                      static_cast<unsigned long>(get_stack_size()));
+        debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
+        assert(more_forward_than(split_stacks_boundary, bottom));
+    }
+
+    char* get_stack() {
+        return stack_frame.stack.get();
+    }
+
+    std::size_t get_stack_size() {
+        return stack_frame.size;
+    }
+
+
+    // non copyable
+    ThreadData(const ThreadData&) = delete;
+    ThreadData(ThreadData&&) = delete;
+
+
+    // this function is public
+    // this is bad
+    template <typename Fn>
+    static ThreadData* create(Fn fn) {
+        Stack stack = StackAllocator::allocate();
+        assert(stack.size != 0);
+        auto th = new(stack.stack.get()) ThreadData(fn);
+        th->stack_frame = std::move(stack);
+        assert(th->get_stack_size() != 0);
+        return th;
+
+    }
+
+    // this function is public
+    // this is bad
+    static void destroy(ThreadData& t) {
+        __splitstack_releasecontext(t.splitstack_context_);
+        Stack stack = std::move(t.stack_frame);
+        t.~ThreadData();
+    }
+
+private:
+    template<typename Fn>
+    static Context exec_thread_delete(void* func_obj, Context t) {
+        Context r = (*static_cast<Fn*>(func_obj))(t);
+        delete static_cast<Fn*>(func_obj);
+        return r;
+    }
+
+
+};
+}
+
 template<class Worker>
 struct BadDesignContextTraitsImpl {
+#ifdef USE_SPLITSTACKS
+    using ThreadData = splitstack::ThreadData;
+#endif
     using Context = ThreadData*;
 
     template <typename Fn>
@@ -211,13 +357,12 @@ private:
     __attribute__((always_inline))
     static ThreadData& context_switch(ThreadData& from, ThreadData& to) {
 
-#ifdef USE_SPLITSTACKS
-        __splitstack_getcontext(from.splitstack_context_);
-#endif
+        from.save_extra_context();
+
         if (mysetjmp(from.env)) {
-#ifdef USE_SPLITSTACKS
-            __splitstack_setcontext(from.splitstack_context_);
-#endif
+
+            from.restore_extra_context();
+
             return *from.pass_on_longjmp;
         }
         to.pass_on_longjmp = &from;
@@ -233,26 +378,26 @@ private:
     __attribute__((always_inline))
     static ThreadData& context_switch_new_context(ThreadData& from, ThreadData& new_ctx) {
 
-#ifdef USE_SPLITSTACKS
-        __splitstack_getcontext(from.splitstack_context_);
-#endif
+        from.save_extra_context();
+
         if (mysetjmp(from.env)) {
-#ifdef USE_SPLITSTACKS
-            __splitstack_setcontext(from.splitstack_context_);
-#endif
+
+            from.restore_extra_context();
+
             return *from.pass_on_longjmp;
         }
         new_ctx.pass_on_longjmp = &from;
-        assert(new_ctx.stack_frame.stack.get() != 0);
-        assert(new_ctx.stack_frame.size != 0);
-        char* stack_frame = new_ctx.stack_frame.stack.get();
-        call_with_alt_stack_arg3(stack_frame, new_ctx.stack_frame.size, reinterpret_cast<void*>(entry_thread),
+        assert(new_ctx.get_stack() != 0);
+        assert(new_ctx.get_stack_size() != 0);
+        char* stack_frame = new_ctx.get_stack();
+        call_with_alt_stack_arg3(stack_frame, new_ctx.get_stack_size(), reinterpret_cast<void*>(entry_thread),
                                  &new_ctx, nullptr, nullptr);
 
         const auto NEVER_COME_HERE = false;
         assert(NEVER_COME_HERE);
 
     }
+
 
     __attribute__((no_split_stack))
     static void entry_thread(ThreadData& thread_data);
@@ -263,17 +408,7 @@ private:
 template<class Worker>
 void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
 
-#ifdef USE_SPLITSTACKS
-    __stack_split_initialize();
-
-    void* bottom = thread_data.stack_frame.stack.get() + thread_data.stack_frame.size;
-    void* split_stacks_boundary = __morestack_get_guard();
-
-    debug::printf("stack top of new thread: %p, stack size of new thread: 0x%lx\n", thread_data.stack_frame.stack.get(),
-                  static_cast<unsigned long>(thread_data.stack_frame.size));
-    debug::printf("stack bottom of new thread: %p, stack boundary of new thread: %p\n", bottom, split_stacks_boundary);
-    assert(more_forward_than(split_stacks_boundary, bottom));
-#endif
+    thread_data.initialize_extra_context_at_entry_point();
 
     debug::printf("start thread in new stack frame\n");
     debug::out << std::endl;
@@ -281,7 +416,7 @@ void BadDesignContextTraitsImpl<Worker>::entry_thread(ThreadData& thread_data) {
 
     thread_data.state = ThreadState::running;
 
-    Context next = thread_data.func(thread_data.arg, thread_data.pass_on_longjmp);
+    Context next = thread_data.call_func(thread_data.pass_on_longjmp);
 
     debug::printf("end thread\n");
     thread_data.state = ThreadState::ended;
