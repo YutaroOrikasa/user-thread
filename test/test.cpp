@@ -133,6 +133,13 @@ TEST(WorkerManager, TestYield) {
 }
 
 #ifdef USE_SPLITSTACKS
+
+TEST(TestBigLocalArray, RecCallWith1Worker) {
+
+    WorkerManager wm { 1 };
+    detail::start_main_thread(wm, rec, 10);
+}
+
 TEST(TestBigLocalArray, RecCall) {
 
     WorkerManager wm { 4 };
