@@ -48,6 +48,11 @@ Worker& get_worker_of_this_native_thread() {
 const std::string& get_worker_name_of_this_native_thread() {
     return worker_name_of_this_native_thread;
 }
+
+WorkerManager& get_global_workermanager() {
+    return *worker_manager_ptr;
+}
+
 } // detail
 
 using namespace detail;
