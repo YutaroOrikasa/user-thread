@@ -62,7 +62,24 @@ void main_thread_for_test_yield(void* arg) {
     }
 }
 
-// void test(WorkerManager& wm, )
+
+void rec(unsigned int n) {
+    volatile char c[0x1000] = {};
+    static_cast<void>(c);
+    if (n == 0) {
+        return;
+    }
+    rec(n - 1);
+}
+
+void rec_thread(WorkerManager* wm, unsigned int n) {
+    volatile char c[0x1000] = {};
+    static_cast<void>(c);
+    if (n == 0) {
+        return;
+    }
+    detail::create_thread(*wm, rec_thread, wm, n - 1);
+}
 
 }
 
@@ -114,6 +131,27 @@ TEST(WorkerManager, TestYield) {
     wm.start_main_thread(main_thread_for_test_yield, &args);
     ASSERT_EQ(args.thread_size * 2, args.counter);
 }
+
+#ifdef USE_SPLITSTACKS
+TEST(TestBigLocalArray, RecCall) {
+
+    WorkerManager wm { 4 };
+    detail::start_main_thread(wm, rec, 10);
+}
+
+TEST(TestBigLocalArray, RecThreadWith1Worker) {
+
+    WorkerManager wm { 1 };
+    detail::start_main_thread(wm, rec_thread, &wm, 10);
+}
+
+TEST(TestBigLocalArray, RecThread) {
+
+    WorkerManager wm { 4 };
+    detail::start_main_thread(wm, rec_thread, &wm, 10);
+}
+
+#endif
 
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
