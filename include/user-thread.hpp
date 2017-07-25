@@ -117,6 +117,30 @@ public:
     }
 };
 
+template <typename Ret>
+struct call_and_set_value_to_promise_impl {
+    template <class P, typename Fn, typename... Args>
+    static
+    void call_and_set_value_to_promise(P& promise, Fn fn, Args...args) {
+        promise.set_value(fn(std::move(args)...));
+    }
+};
+
+template <>
+struct call_and_set_value_to_promise_impl<void> {
+    template <class P, typename Fn, typename... Args>
+    static
+    void call_and_set_value_to_promise(P& promise, Fn fn, Args...args) {
+        fn(std::move(args)...);
+        promise.set_value();
+    }
+};
+
+template <class P, typename Fn, typename... Args>
+void call_and_set_value_to_promise(P& promise, Fn fn, Args...args) {
+    call_and_set_value_to_promise_impl<decltype(fn(std::move(args)...))>::call_and_set_value_to_promise(promise, fn, std::move(args)...);
+}
+
 // return: std::future<auto>
 template <typename Fn, typename... Args>
 auto create_thread(WorkerManager& wm, Fn fn, Args... args) {
@@ -125,7 +149,7 @@ auto create_thread(WorkerManager& wm, Fn fn, Args... args) {
 
     // TODO INVOKE(DECAY_COPY(std::forward<F>(f)), DECAY_COPY(std::forward<Args>(args))...)
     auto fn0 = [promise = std::move(promise), fn, args...]() mutable {
-        promise.set_value(fn(args...));
+        call_and_set_value_to_promise(promise, fn, std::move(args)...);
     };
     using Fn0 = decltype(fn0);
     wm.start_thread(detail::exec_thread_delete<Fn0>, new Fn0(std::move(fn0)));
@@ -142,7 +166,7 @@ auto start_main_thread(WorkerManager& wm, Fn fn, Args... args) {
 
     // TODO INVOKE(DECAY_COPY(std::forward<F>(f)), DECAY_COPY(std::forward<Args>(args))...)
     auto fn0 = [promise = std::move(promise), fn = std::move(fn), &args...]() mutable {
-        promise.set_value(fn(std::move(args)...));
+        call_and_set_value_to_promise(promise, fn, std::move(args)...);
     };
     using Fn0 = decltype(fn0);
     wm.start_main_thread(WorkerManager::exec_thread<Fn0>, &fn0);
