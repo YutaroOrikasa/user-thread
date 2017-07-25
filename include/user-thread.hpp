@@ -132,6 +132,24 @@ auto create_thread(WorkerManager& wm, Fn fn, Args... args) {
     return future;
 }
 
+// blocks until main thread finished
+// return: std::future<auto>
+template <typename Fn, typename... Args>
+auto start_main_thread(WorkerManager& wm, Fn fn, Args... args) {
+
+    std::promise<decltype(fn(args...))> promise;
+    auto future = promise.get_future();
+
+    // TODO INVOKE(DECAY_COPY(std::forward<F>(f)), DECAY_COPY(std::forward<Args>(args))...)
+    auto fn0 = [promise = std::move(promise), fn = std::move(fn), &args...]() mutable {
+        promise.set_value(fn(std::move(args)...));
+    };
+    using Fn0 = decltype(fn0);
+    wm.start_main_thread(WorkerManager::exec_thread<Fn0>, &fn0);
+    return future;
+
+}
+
 WorkerManager& get_global_workermanager();
 }
 using detail::WorkerManager;
