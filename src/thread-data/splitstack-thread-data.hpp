@@ -72,7 +72,7 @@ public:
     // always_inline for no split stack
     __attribute__((always_inline))
     void initialize_extra_context_at_entry_point() {
-        __stack_split_initialize();
+        __splitstack_setcontext(splitstack_context_.ctx);
 
         void* bottom = get_stack() + get_stack_size();
         void* split_stacks_boundary = __morestack_get_guard();
