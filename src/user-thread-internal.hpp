@@ -91,12 +91,24 @@ public:
     static Work make_thread(void (*func)(void* arg), void* arg) {
         auto func_ = [func, arg](Work prev) -> Work {
             call_after_context_switch(prev);
+
             func(arg);
+
             debug::printf("fini\n");
             auto& worker = get_worker_of_this_native_thread();
-            auto p_next = worker.work_queue.pop();
+            auto pop_no_timeout = [&]() -> decltype(worker.work_queue.pop()) {
+                while (!worker.work_queue.is_closed()) {
+                    auto p_next = worker.work_queue.pop();
+                    if (p_next) {
+                        return p_next;
+                    }
+                }
+                return boost::none;
+            };
+            auto p_next = pop_no_timeout();
+
             if (!p_next) {
-                debug::printf("will jump back to worker context\n");
+                debug::printf("work queue was closed. will jump back to worker context\n");
                 // remove volatile by copy
                 auto tmp = worker.worker_thread_context;
                 p_next = tmp;
@@ -120,10 +132,14 @@ private:
         debug::printf("worker is wake up! this: %p\n", this);
         debug::printf("worker_thread_context %p\n", worker_thread_context);
 
-        schedule_thread();
+        while (!work_queue.is_closed()) {
+            schedule_thread();
+        }
 
         debug::printf("jumped back to worker context\n");
         debug::printf("worker will quit\n");
+
+        assert(work_queue.is_closed());
 
     }
 
@@ -131,6 +147,11 @@ private:
     void switch_thread(WorkQueue& work_queue) {
         auto p_next = work_queue.pop();
         if (!p_next) {
+            if (!work_queue.is_closed()) {
+                debug::printf("work queue was time out. no context switch will occur.\n");
+                return;
+            }
+
             debug::printf("will jump back to worker context\n");
             if (worker_thread_context == nullptr) {
                 return;
