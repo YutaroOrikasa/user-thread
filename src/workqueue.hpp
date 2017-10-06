@@ -122,7 +122,7 @@ public:
      */
     boost::optional<T> steal() {
 
-        for (;;) { //for (auto i : boost::irange(0, 100)) {
+        for (auto i : boost::irange(0, 1000)) {
             debug::printf("WorkQueue::steal loop\n");
             if (closed) {
                 debug::printf("WorkQueue::steal closed\n");
@@ -140,7 +140,8 @@ public:
             }
 
         }
-        return nullptr;
+        debug::printf("WorkQueue::steal timeout\n");
+        return boost::none;
     }
 
     void close() {
